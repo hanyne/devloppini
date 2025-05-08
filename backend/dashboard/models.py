@@ -1,8 +1,9 @@
 from django.db import models
-from django.contrib.auth.models import User  # Ajout de l'importation
+from django.contrib.auth.models import User
 from django.utils import timezone
+from decimal import Decimal
+from django.db.models import JSONField
 
-# Modèle pour stocker le rôle de l'utilisateur
 class UserProfile(models.Model):
     ROLE_CHOICES = [
         ('client', 'Client'),
@@ -14,7 +15,6 @@ class UserProfile(models.Model):
     def __str__(self):
         return f"{self.user.username} - {self.role}"
 
-# Modèles existants
 class Service(models.Model):
     name = models.CharField(max_length=100)
     description = models.TextField()
@@ -24,17 +24,19 @@ class Service(models.Model):
         ('design', 'Design Graphique'),
         ('other', 'Autre'),
     ])
-    price_range = models.CharField(max_length=50, help_text="Ex: 500-1000 TND")
+    price_range = models.CharField(max_length=50, help_text="Ex: 500-1000 USD")
     features = models.TextField(help_text="Liste des fonctionnalités, séparées par des virgules")
     icon = models.CharField(max_length=50, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return self.name
+
 class Client(models.Model):
     name = models.CharField(max_length=100)
     email = models.EmailField(unique=True)
     phone = models.CharField(max_length=15)
+    country_code = models.CharField(max_length=5, default='+216')
     password = models.CharField(max_length=128)
 
     def set_password(self, raw_password):
@@ -47,6 +49,7 @@ class Client(models.Model):
 
     def __str__(self):
         return self.name
+
 class Historique(models.Model):
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='historique')
     action = models.CharField(max_length=255)
@@ -71,6 +74,7 @@ class ProduitDetail(models.Model):
 
     def __str__(self):
         return f"Détails pour Devis #{self.devis.id} - {self.type_site}"
+
 class Devis(models.Model):
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='devis')
     description = models.TextField()
@@ -80,7 +84,7 @@ class Devis(models.Model):
     status = models.CharField(max_length=20, choices=[('pending', 'En attente'), ('approved', 'Approuvé'), ('rejected', 'Rejeté')], default='pending')
 
     def __str__(self):
-        return f"Devis pour {self.client.name} - {self.amount} TND"
+        return f"Devis pour {self.client.name} - {self.amount} USD"
 
 class Facture(models.Model):
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='factures')
@@ -92,17 +96,17 @@ class Facture(models.Model):
     image = models.ImageField(upload_to='factures/', null=True, blank=True)
 
     def __str__(self):
-        return f"Facture #{self.invoice_number} - {self.amount} TND"
+        return f"Facture #{self.invoice_number} - {self.amount} USD"
 
 class LigneFacture(models.Model):
     facture = models.ForeignKey(Facture, on_delete=models.CASCADE, related_name='lignes')
     designation = models.CharField(max_length=100)
-    prix_unitaire = models.DecimalField(max_digits=10, decimal_places=3)
+    prix_unitaire = models.DecimalField(max_digits=10, decimal_places=2)
     quantite = models.IntegerField()
-    total = models.DecimalField(max_digits=10, decimal_places=3, editable=False)
+    total = models.DecimalField(max_digits=10, decimal_places=2, editable=False)
 
     def save(self, *args, **kwargs):
-        self.total = self.prix_unitaire * self.quantite
+        self.total = self.prix_unitaire * Decimal(self.quantite)
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -110,39 +114,13 @@ class LigneFacture(models.Model):
 
 class Payment(models.Model):
     facture = models.ForeignKey(Facture, on_delete=models.CASCADE, related_name='payments')
-    stripe_payment_intent_id = models.CharField(max_length=100, unique=True)
-    amount = models.DecimalField(max_digits=10, decimal_places=3)
-    currency = models.CharField(max_length=3, default='TND')
+    paypal_order_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    currency = models.CharField(max_length=3, default='USD')
     status = models.CharField(max_length=20, default='pending')
     risk_level = models.CharField(max_length=20, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    metadata = JSONField(default=dict, blank=True, null=True)
 
     def __str__(self):
-        return f"Payment {self.stripe_payment_intent_id} for Facture {self.facture.invoice_number}"
-class Quote(models.Model):
-    STATUS_CHOICES = (
-        ('pending', 'En attente'),
-        ('accepted', 'Accepté'),
-        ('rejected', 'Rejeté'),
-    )
-    PAYMENT_STATUS_CHOICES = (
-        ('pending', 'En attente'),
-        ('completed', 'Complété'),
-        ('failed', 'Échoué'),
-    )
-
-    client = models.ForeignKey(User, on_delete=models.CASCADE, related_name='quotes')
-    project_type = models.CharField(max_length=100)
-    budget = models.DecimalField(max_digits=10, decimal_places=2)
-    details = models.TextField()
-    type_site = models.CharField(max_length=50)
-    fonctionnalites = models.TextField(blank=True)
-    design_personnalise = models.BooleanField(default=False)
-    integration_seo = models.BooleanField(default=False)
-    autre_details = models.TextField(blank=True)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
-    payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, default='pending')
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"Devis #{self.id} - {self.project_type}"
+        return f"Payment {self.paypal_order_id} for Facture {self.facture.invoice_number}"

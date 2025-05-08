@@ -7,7 +7,6 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
     def get_token(cls, user):
         token = super().get_token(user)
-        # Add role to the token
         if user.is_superuser:
             token['role'] = 'admin'
         else:
@@ -28,6 +27,11 @@ class ClientSerializer(serializers.ModelSerializer):
         model = Client
         fields = ['id', 'name', 'email', 'phone']
 
+    def validate_phone(self, value):
+        import re
+        if not re.match(r'^\+\d{10,15}$', value):
+            raise serializers.ValidationError("Le numéro de téléphone doit être au format E.164 (ex: +21612345678).")
+        return value
 class HistoriqueSerializer(serializers.ModelSerializer):
     client = serializers.PrimaryKeyRelatedField(queryset=Client.objects.all())
 
@@ -51,39 +55,36 @@ class LigneFactureSerializer(serializers.ModelSerializer):
         model = LigneFacture
         fields = ['id', 'designation', 'prix_unitaire', 'quantite', 'total']
 
+# serializers.py
 class PaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Payment
-        fields = ['id', 'facture', 'stripe_payment_intent_id', 'amount', 'currency', 'status', 'risk_level', 'created_at']
+        fields = ['id', 'facture', 'stripe_payment_intent_id', 'amount', 'currency', 'status', 'risk_level', 'created_at', 'metadata']
+    def validate_currency(self, value):
+        if value != 'USD':
+            raise serializers.ValidationError("La devise doit être USD.")
+        return value
 
 class DevisSerializer(serializers.ModelSerializer):
     client = ClientSerializer(read_only=True)
+    client_id = serializers.PrimaryKeyRelatedField(queryset=Client.objects.all(), source='client', write_only=True)
     produit_details = ProduitDetailSerializer(many=True, read_only=True)
 
     class Meta:
         model = Devis
-        fields = ['id', 'client', 'description', 'details', 'amount', 'created_at', 'status', 'produit_details']
+        fields = ['id', 'client', 'client_id', 'description', 'details', 'amount', 'created_at', 'status', 'produit_details']
 
     def validate_amount(self, value):
-        print("Validation de amount:", value, type(value))
         if value is None:
             raise serializers.ValidationError("Le montant est requis.")
-        try:
-            float_value = float(value)
-            if float_value <= 0:
-                raise serializers.ValidationError("Le montant doit être un nombre positif.")
-            return float_value
-        except (TypeError, ValueError):
-            raise serializers.ValidationError("Le montant doit être un nombre valide.")
+        if value <= 0:
+            raise serializers.ValidationError("Le montant doit être un nombre positif.")
+        return value
 
     def validate_description(self, value):
         if not value or not value.strip():
             raise serializers.ValidationError("La description ne peut pas être vide.")
         return value.strip()
-
-    def validate(self, data):
-        print("Données validées par DevisSerializer:", data)
-        return data
 
 class FactureSerializer(serializers.ModelSerializer):
     client = ClientSerializer(read_only=True)
@@ -96,6 +97,13 @@ class FactureSerializer(serializers.ModelSerializer):
     class Meta:
         model = Facture
         fields = ['id', 'client', 'client_id', 'devis', 'devis_id', 'invoice_number', 'amount', 'created_at', 'status', 'image', 'lignes', 'payments']
+
+    def validate_amount(self, value):
+        if value is None:
+            raise serializers.ValidationError("Le montant est requis.")
+        if value <= 0:
+            raise serializers.ValidationError("Le montant doit être un nombre positif.")
+        return value
 
     def create(self, validated_data):
         lignes_data = validated_data.pop('lignes', [])
@@ -111,6 +119,7 @@ class FactureSerializer(serializers.ModelSerializer):
         instance.invoice_number = validated_data.get('invoice_number', instance.invoice_number)
         instance.amount = validated_data.get('amount', instance.amount)
         instance.status = validated_data.get('status', instance.status)
+        instance.image = validated_data.get('image', instance.image)
         instance.save()
 
         instance.lignes.all().delete()

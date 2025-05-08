@@ -1,6 +1,23 @@
 import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import '../App.css';
+import { toast } from 'react-toastify';
+import { motion, AnimatePresence } from 'framer-motion';
+import { FaEdit, FaTrash, FaFilePdf, FaPlus, FaTimes, FaUpload } from 'react-icons/fa';
+
+// Fonction pour Skeleton Loading
+const SkeletonRow = () => (
+  <tr>
+    <td colSpan="7" className="p-4">
+      <div className="animate-pulse flex space-x-4">
+        <div className="flex-1 space-y-4">
+          <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+          <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+        </div>
+      </div>
+    </td>
+  </tr>
+);
 
 const Factures = () => {
   const [factures, setFactures] = useState([]);
@@ -13,12 +30,14 @@ const Factures = () => {
     amount: '',
     status: 'unpaid',
   });
-  const [lignes, setLignes] = useState([]);
-  const [newLigne, setNewLigne] = useState({ designation: '', prix_unitaire: '', quantite: '' });
   const [editId, setEditId] = useState(null);
   const [file, setFile] = useState(null);
   const [ocrError, setOcrError] = useState(null);
-  const [fetchError, setFetchError] = useState(null); // Ajout d'un état pour gérer les erreurs de fetch
+  const [fetchError, setFetchError] = useState(null);
+  const [successMessage, setSuccessMessage] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isOCRModalOpen, setIsOCRModalOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -35,30 +54,20 @@ const Factures = () => {
     }
 
     try {
-      const response = await fetch('http://localhost:8000/api/factures/', {
-        headers: { 'Authorization': `Bearer ${token}` },
+      setLoading(true);
+      const response = await axios.get('http://localhost:8000/api/factures/', {
+        headers: { Authorization: `Bearer ${token}` },
       });
-      if (!response.ok) {
-        throw new Error('Erreur lors de la récupération des factures');
-      }
-      const data = await response.json();
-      const formattedData = data.map(facture => ({
-        ...facture,
-        lignes: facture.lignes.map(ligne => ({
-          ...ligne,
-          prix_unitaire: parseFloat(ligne.prix_unitaire),
-          total: parseFloat(ligne.total),
-        })),
-      }));
-      setFactures(formattedData);
-      setFetchError(null); // Réinitialiser l'erreur si la requête réussit
+      setFactures(response.data);
+      setFetchError(null);
     } catch (error) {
       console.error('Erreur lors du chargement des factures:', error);
       setFetchError('Impossible de charger les factures. Veuillez réessayer plus tard.');
-      // Ne pas rediriger vers /login ici, sauf si c'est une erreur 401
-      if (error.message.includes('401')) {
+      if (error.response?.status === 401) {
         navigate('/login');
       }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -70,18 +79,14 @@ const Factures = () => {
     }
 
     try {
-      const response = await fetch('http://localhost:8000/api/clients/', {
-        headers: { 'Authorization': `Bearer ${token}` },
+      const response = await axios.get('http://localhost:8000/api/clients/', {
+        headers: { Authorization: `Bearer ${token}` },
       });
-      if (!response.ok) {
-        throw new Error('Erreur lors de la récupération des clients');
-      }
-      const data = await response.json();
-      setClients(data);
+      setClients(response.data);
     } catch (error) {
       console.error('Erreur lors du chargement des clients:', error);
       setFetchError('Impossible de charger les clients. Veuillez réessayer plus tard.');
-      if (error.message.includes('401')) {
+      if (error.response?.status === 401) {
         navigate('/login');
       }
     }
@@ -95,18 +100,14 @@ const Factures = () => {
     }
 
     try {
-      const response = await fetch('http://localhost:8000/api/devis/', {
-        headers: { 'Authorization': `Bearer ${token}` },
+      const response = await axios.get('http://localhost:8000/api/devis/', {
+        headers: { Authorization: `Bearer ${token}` },
       });
-      if (!response.ok) {
-        throw new Error('Erreur lors de la récupération des devis');
-      }
-      const data = await response.json();
-      setDevis(data);
+      setDevis(response.data);
     } catch (error) {
       console.error('Erreur lors du chargement des devis:', error);
       setFetchError('Impossible de charger les devis. Veuillez réessayer plus tard.');
-      if (error.message.includes('401')) {
+      if (error.response?.status === 401) {
         navigate('/login');
       }
     }
@@ -114,29 +115,6 @@ const Factures = () => {
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
-
-  const handleLigneChange = (e) => {
-    const { name, value } = e.target;
-    setNewLigne({ ...newLigne, [name]: value });
-  };
-
-  const addLigne = () => {
-    const { designation, prix_unitaire, quantite } = newLigne;
-    if (!designation || !prix_unitaire || !quantite) {
-      alert('Veuillez remplir tous les champs de la ligne.');
-      return;
-    }
-
-    const prixUnitaireNum = parseFloat(prix_unitaire);
-    const quantiteNum = parseInt(quantite);
-    const total = prixUnitaireNum * quantiteNum;
-    setLignes([...lignes, { designation, prix_unitaire: prixUnitaireNum, quantite: quantiteNum, total }]);
-    setNewLigne({ designation: '', prix_unitaire: '', quantite: '' });
-  };
-
-  const removeLigne = (index) => {
-    setLignes(lignes.filter((_, i) => i !== index));
   };
 
   const handleFileChange = (e) => {
@@ -153,43 +131,30 @@ const Factures = () => {
     }
 
     const url = editId ? `http://localhost:8000/api/factures/${editId}/` : 'http://localhost:8000/api/factures/';
-    const method = editId ? 'PUT' : 'POST';
-
-    const totalAmount = lignes.reduce((sum, ligne) => sum + ligne.total, 0);
-
-    const dataToSend = {
-      ...formData,
-      amount: totalAmount,
-      lignes: lignes.map(ligne => ({
-        designation: ligne.designation,
-        prix_unitaire: ligne.prix_unitaire,
-        quantite: ligne.quantite,
-        total: ligne.total,
-      })),
-    };
+    const method = editId ? 'put' : 'post';
 
     try {
-      const response = await fetch(url, {
+      const response = await axios({
         method,
+        url,
+        data: formData,
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(dataToSend),
       });
-      if (response.ok) {
-        fetchFactures();
-        setFormData({ client_id: '', devis_id: '', invoice_number: '', amount: '', status: 'unpaid' });
-        setLignes([]);
-        setEditId(null);
-      } else {
-        const errorData = await response.json();
-        console.error('Erreur lors de la soumission:', errorData);
-      }
+      setSuccessMessage(editId ? 'Facture modifiée avec succès.' : 'Facture créée avec succès. Un SMS a été envoyé au client.');
+      fetchFactures();
+      setFormData({ client_id: '', devis_id: '', invoice_number: '', amount: '', status: 'unpaid' });
+      setEditId(null);
+      setIsModalOpen(false);
+      setFetchError(null);
+      setTimeout(() => setSuccessMessage(null), 5000);
     } catch (error) {
       console.error('Erreur lors de la soumission:', error);
-      setFetchError('Erreur lors de la soumission de la facture. Veuillez réessayer.');
-      if (error.message.includes('401')) {
+      const errorMessage = error.response?.data?.error || 'Erreur lors de la soumission de la facture.';
+      setFetchError(errorMessage);
+      if (error.response?.status === 401) {
         navigate('/login');
       }
     }
@@ -204,31 +169,27 @@ const Factures = () => {
     }
 
     if (!file) {
-      setOcrError("Veuillez sélectionner un fichier.");
+      setOcrError('Veuillez sélectionner un fichier.');
       return;
     }
 
-    const formData = new FormData();
-    formData.append('image', file);
+    const formDataToSend = new FormData();
+    formDataToSend.append('image', file);
 
     try {
-      const response = await fetch('http://localhost:8000/api/factures/ocr/', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-        body: formData,
+      const response = await axios.post('http://localhost:8000/api/facture/ocr/', formDataToSend, {
+        headers: { Authorization: `Bearer ${token}` },
       });
-      const result = await response.json();
-      if (response.ok) {
-        fetchFactures();
-        setFile(null);
-        setOcrError(null);
-      } else {
-        setOcrError(result.error || "Erreur inconnue lors de l’OCR");
-      }
+      setSuccessMessage('Facture importée via OCR avec succès.');
+      fetchFactures();
+      setFile(null);
+      setOcrError(null);
+      setIsOCRModalOpen(false);
+      setTimeout(() => setSuccessMessage(null), 5000);
     } catch (error) {
       console.error('Erreur lors de l’OCR:', error);
-      setOcrError("Erreur réseau ou serveur indisponible");
-      if (error.message.includes('401')) {
+      setOcrError(error.response?.data?.error || 'Erreur réseau ou serveur indisponible');
+      if (error.response?.status === 401) {
         navigate('/login');
       }
     }
@@ -241,20 +202,19 @@ const Factures = () => {
       return;
     }
 
+    if (!window.confirm('Êtes-vous sûr de vouloir supprimer cette facture ?')) return;
+
     try {
-      const response = await fetch(`http://localhost:8000/api/factures/${id}/`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` },
+      await axios.delete(`http://localhost:8000/api/factures/${id}/`, {
+        headers: { Authorization: `Bearer ${token}` },
       });
-      if (response.ok) {
-        fetchFactures();
-      } else {
-        throw new Error('Erreur lors de la suppression');
-      }
+      fetchFactures();
+      setFetchError(null);
+      toast.success('Facture supprimée avec succès !');
     } catch (error) {
       console.error('Erreur lors de la suppression:', error);
       setFetchError('Erreur lors de la suppression de la facture.');
-      if (error.message.includes('401')) {
+      if (error.response?.status === 401) {
         navigate('/login');
       }
     }
@@ -268,13 +228,9 @@ const Factures = () => {
       amount: facture.amount,
       status: facture.status,
     });
-    const formattedLignes = facture.lignes.map(ligne => ({
-      ...ligne,
-      prix_unitaire: parseFloat(ligne.prix_unitaire),
-      total: parseFloat(ligne.total),
-    }));
-    setLignes(formattedLignes);
     setEditId(facture.id);
+    setSuccessMessage(null);
+    setIsModalOpen(true);
   };
 
   const handleDownloadPDF = async (id) => {
@@ -285,18 +241,12 @@ const Factures = () => {
     }
 
     try {
-      const response = await fetch(`http://localhost:8000/api/factures/${id}/pdf/`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
+      const response = await axios.get(`http://localhost:8000/api/facture/${id}/pdf/`, {
+        headers: { Authorization: `Bearer ${token}` },
+        responseType: 'blob',
       });
 
-      if (!response.ok) {
-        throw new Error('Erreur lors du téléchargement du PDF');
-      }
-
-      const blob = await response.blob();
+      const blob = new Blob([response.data], { type: 'application/pdf' });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -304,210 +254,319 @@ const Factures = () => {
       document.body.appendChild(link);
       link.click();
       link.parentNode.removeChild(link);
+      window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Erreur lors du téléchargement du PDF:', error);
       setFetchError('Erreur lors du téléchargement du PDF.');
-      if (error.message.includes('401')) {
+      if (error.response?.status === 401) {
         navigate('/login');
       }
     }
   };
 
   return (
-    <div className="min-vh-100 bg-light">
-      <div className="container my-5">
-        <h2 className="mb-4 text-dark fw-bold">Gestion des Factures</h2>
+    <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+      {/* Navbar */}
+      <nav className="bg-gray-800 p-4 shadow-lg">
+        <div className="container mx-auto flex justify-between items-center">
+          <h1 className="text-2xl font-bold text-white">Gestion des Factures</h1>
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="text-white hover:text-gray-300 transition"
+          >
+            Retour au Dashboard
+          </button>
+        </div>
+      </nav>
 
-        {/* Afficher les erreurs de fetch */}
-        {fetchError && <div className="alert alert-danger">{fetchError}</div>}
+      {/* Contenu Principal */}
+      <div className="container mx-auto p-6">
+        {/* Boutons pour Ajouter et OCR */}
+        <div className="mb-6 flex justify-end space-x-4">
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => {
+              setFormData({ client_id: '', devis_id: '', invoice_number: '', amount: '', status: 'unpaid' });
+              setEditId(null);
+              setIsModalOpen(true);
+            }}
+            className="flex items-center bg-indigo-600 text-white px-4 py-2 rounded-lg shadow hover:bg-indigo-700 transition"
+          >
+            <FaPlus className="mr-2" />
+            Ajouter une Facture
+          </motion.button>
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => {
+              setFile(null);
+              setOcrError(null);
+              setIsOCRModalOpen(true);
+            }}
+            className="flex items-center bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition"
+          >
+            <FaUpload className="mr-2" />
+            Importer via OCR
+          </motion.button>
+        </div>
 
-        {/* Formulaire manuel */}
-        <div className="card mb-5 shadow-lg border-0 rounded-3">
-          <div className="card-body p-4">
-            <h5 className="card-title text-primary fw-semibold">{editId ? 'Modifier une Facture' : 'Ajouter une Facture'}</h5>
-            <form onSubmit={handleSubmit}>
-              <div className="row g-3">
-                <div className="col-md-6">
-                  <select className="form-select border-0 shadow-sm" name="client_id" value={formData.client_id} onChange={handleChange} required>
+        {/* Messages de succès ou erreur */}
+        {successMessage && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="mb-4 bg-green-100 text-green-800 p-3 rounded-lg"
+          >
+            {successMessage}
+          </motion.div>
+        )}
+        {fetchError && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="mb-4 bg-red-100 text-red-800 p-3 rounded-lg"
+          >
+            {fetchError}
+          </motion.div>
+        )}
+
+        {/* Tableau des Factures */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
+          <table className="w-full">
+            <thead className="bg-gray-200 dark:bg-gray-700">
+              <tr>
+                <th className="p-4 text-left">Numéro</th>
+                <th className="p-4 text-left">Client</th>
+                <th className="p-4 text-left">Devis</th>
+                <th className="p-4 text-left">Montant (TND)</th>
+                <th className="p-4 text-left">Statut</th>
+                <th className="p-4 text-left">Date</th>
+                <th className="p-4 text-left">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <>
+                  <SkeletonRow />
+                  <SkeletonRow />
+                  <SkeletonRow />
+                </>
+              ) : factures.length === 0 ? (
+                <tr>
+                  <td colSpan="7" className="p-4 text-center text-gray-500">
+                    Aucune facture disponible.
+                  </td>
+                </tr>
+              ) : (
+                factures.map((f) => (
+                  <motion.tr
+                    key={f.id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.3 }}
+                    className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700"
+                  >
+                    <td className="p-4">{f.invoice_number}</td>
+                    <td className="p-4">{f.client.name}</td>
+                    <td className="p-4">{f.devis ? `${f.devis.description} (${f.devis.amount} TND)` : 'Aucun'}</td>
+                    <td className="p-4">{f.amount} TND</td>
+                    <td className="p-4">
+                      <span
+                        className={`px-2 py-1 rounded ${
+                          f.status === 'paid' ? 'bg-green-200 text-green-800' : f.status === 'overdue' ? 'bg-red-200 text-red-800' : 'bg-yellow-200 text-yellow-800'
+                        }`}
+                      >
+                        {f.status === 'unpaid' ? 'Impayée' : f.status === 'paid' ? 'Payée' : 'En retard'}
+                      </span>
+                    </td>
+                    <td className="p-4">{new Date(f.created_at).toLocaleDateString()}</td>
+                    <td className="p-4 flex space-x-2">
+                      <motion.button
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={() => handleEdit(f)}
+                        className="text-blue-500 hover:text-blue-700"
+                      >
+                        <FaEdit />
+                      </motion.button>
+                      <motion.button
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={() => handleDelete(f.id)}
+                        className="text-red-500 hover:text-red-700"
+                      >
+                        <FaTrash />
+                      </motion.button>
+                      <motion.button
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={() => handleDownloadPDF(f.id)}
+                        className="text-indigo-500 hover:text-indigo-700"
+                      >
+                        <FaFilePdf />
+                      </motion.button>
+                    </td>
+                  </motion.tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Modal pour Ajouter/Modifier une Facture */}
+      <AnimatePresence>
+        {isModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md shadow-lg"
+            >
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-semibold">
+                  {editId ? 'Modifier une Facture' : 'Ajouter une Facture'}
+                </h3>
+                <button onClick={() => setIsModalOpen(false)} className="text-gray-500 hover:text-gray-700">
+                  <FaTimes />
+                </button>
+              </div>
+              <form onSubmit={handleSubmit}>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium mb-1">Client</label>
+                  <select
+                    name="client_id"
+                    value={formData.client_id}
+                    onChange={handleChange}
+                    className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-indigo-500"
+                    required
+                  >
                     <option value="">Choisir un client</option>
                     {clients.map((client) => (
                       <option key={client.id} value={client.id}>{client.name}</option>
                     ))}
                   </select>
                 </div>
-                <div className="col-md-6">
-                  <select className="form-select border-0 shadow-sm" name="devis_id" value={formData.devis_id} onChange={handleChange}>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium mb-1">Devis</label>
+                  <select
+                    name="devis_id"
+                    value={formData.devis_id}
+                    onChange={handleChange}
+                    className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-indigo-500"
+                  >
                     <option value="">Aucun devis</option>
                     {devis.map((d) => (
                       <option key={d.id} value={d.id}>{d.description} - {d.amount} TND</option>
                     ))}
                   </select>
                 </div>
-                <div className="col-md-6">
+                <div className="mb-4">
+                  <label className="block text-sm font-medium mb-1">Numéro de facture</label>
                   <input
                     type="text"
-                    className="form-control border-0 shadow-sm"
                     name="invoice_number"
                     value={formData.invoice_number}
                     onChange={handleChange}
                     placeholder="Numéro de facture"
+                    className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-indigo-500"
                     required
                   />
                 </div>
-                <div className="col-md-6">
-                  <select className="form-select border-0 shadow-sm" name="status" value={formData.status} onChange={handleChange}>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium mb-1">Montant (TND)</label>
+                  <input
+                    type="number"
+                    name="amount"
+                    value={formData.amount}
+                    onChange={handleChange}
+                    placeholder="Montant (TND)"
+                    step="0.01"
+                    className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-indigo-500"
+                    required
+                  />
+                </div>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium mb-1">Statut</label>
+                  <select
+                    name="status"
+                    value={formData.status}
+                    onChange={handleChange}
+                    className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-indigo-500"
+                  >
                     <option value="unpaid">Impayée</option>
                     <option value="paid">Payée</option>
                     <option value="overdue">En retard</option>
                   </select>
                 </div>
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  type="submit"
+                  className="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 transition"
+                >
+                  {editId ? 'Modifier' : 'Ajouter'}
+                </motion.button>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-                {/* Section pour ajouter des lignes de produits */}
-                <div className="col-12 mt-4">
-                  <h6 className="text-primary fw-semibold">Ajouter des produits</h6>
-                  <div className="row g-3 mb-3">
-                    <div className="col-md-3">
-                      <input
-                        type="text"
-                        className="form-control border-0 shadow-sm"
-                        name="designation"
-                        value={newLigne.designation}
-                        onChange={handleLigneChange}
-                        placeholder="Désignation"
-                      />
-                    </div>
-                    <div className="col-md-3">
-                      <input
-                        type="number"
-                        className="form-control border-0 shadow-sm"
-                        name="prix_unitaire"
-                        value={newLigne.prix_unitaire} // Corrigé ici
-                        onChange={handleLigneChange}
-                        placeholder="Prix unitaire (DT)"
-                        step="0.001"
-                      />
-                    </div>
-                    <div className="col-md-3">
-                      <input
-                        type="number"
-                        className="form-control border-0 shadow-sm"
-                        name="quantite"
-                        value={newLigne.quantite}
-                        onChange={handleLigneChange}
-                        placeholder="Quantité"
-                      />
-                    </div>
-                    <div className="col-md-3">
-                      <button type="button" className="btn btn-success px-4 py-2 fw-semibold rounded-3" onClick={addLigne}>
-                        Ajouter Ligne
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Liste des lignes ajoutées */}
-                  {lignes.length > 0 && (
-                    <div className="table-responsive">
-                      <table className="table table-bordered">
-                        <thead>
-                          <tr>
-                            <th>Désignation</th>
-                            <th>Prix unitaire (DT)</th>
-                            <th>Quantité</th>
-                            <th>Total (DT)</th>
-                            <th>Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {lignes.map((ligne, index) => (
-                            <tr key={index}>
-                              <td>{ligne.designation}</td>
-                              <td>{Number(ligne.prix_unitaire).toFixed(3)}</td>
-                              <td>{ligne.quantite}</td>
-                              <td>{Number(ligne.total).toFixed(3)}</td>
-                              <td>
-                                <button
-                                  type="button"
-                                  className="btn btn-danger btn-sm rounded-3"
-                                  onClick={() => removeLigne(index)}
-                                >
-                                  Supprimer
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-
-                <div className="col-12">
-                  <button type="submit" className="btn btn-primary px-4 py-2 fw-semibold rounded-3">
-                    {editId ? 'Modifier' : 'Ajouter'}
-                  </button>
-                </div>
+      {/* Modal pour OCR */}
+      <AnimatePresence>
+        {isOCRModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md shadow-lg"
+            >
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-semibold">Importer une Facture via OCR</h3>
+                <button onClick={() => setIsOCRModalOpen(false)} className="text-gray-500 hover:text-gray-700">
+                  <FaTimes />
+                </button>
               </div>
-            </form>
-          </div>
-        </div>
-
-        {/* Formulaire OCR */}
-        <div className="card mb-5 shadow-lg border-0 rounded-3">
-          <div className="card-body p-4">
-            <h5 className="card-title text-primary fw-semibold">Importer une Facture via OCR</h5>
-            <form onSubmit={handleOCRSubmit}>
-              <div className="mb-3">
-                <input type="file" className="form-control border-0 shadow-sm" onChange={handleFileChange} accept="image/*,.pdf" />
-              </div>
-              {ocrError && <div className="alert alert-danger">{ocrError}</div>}
-              <button type="submit" className="btn btn-success px-4 py-2 fw-semibold rounded-3">Analyser et Ajouter</button>
-            </form>
-          </div>
-        </div>
-
-        {/* Liste */}
-        <div className="card shadow-lg border-0 rounded-3">
-          <div className="card-body p-4">
-            <h5 className="card-title text-primary fw-semibold mb-4">Liste des Factures</h5>
-            <div className="table-responsive">
-              <table className="table table-hover align-middle">
-                <thead className="table-dark">
-                  <tr>
-                    <th>Numéro</th>
-                    <th>Client</th>
-                    <th>Devis</th>
-                    <th>Montant (TND)</th>
-                    <th>Statut</th>
-                    <th>Date</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {factures.map((f) => (
-                    <tr key={f.id}>
-                      <td>{f.invoice_number}</td>
-                      <td>{f.client.name}</td>
-                      <td>{f.devis ? `${f.devis.description} (${f.devis.amount} TND)` : 'Aucun'}</td>
-                      <td>{f.amount} TND</td>
-                      <td>
-                        <span className={`badge ${f.status === 'paid' ? 'bg-success' : f.status === 'overdue' ? 'bg-danger' : 'bg-warning'}`}>
-                          {f.status === 'unpaid' ? 'Impayée' : f.status === 'paid' ? 'Payée' : 'En retard'}
-                        </span>
-                      </td>
-                      <td>{new Date(f.created_at).toLocaleDateString()}</td>
-                      <td>
-                        <button className="btn btn-outline-warning btn-sm me-2 rounded-3" onClick={() => handleEdit(f)}>Modifier</button>
-                        <button className="btn btn-outline-danger btn-sm me-2 rounded-3" onClick={() => handleDelete(f.id)}>Supprimer</button>
-                        <button className="btn btn-outline-primary btn-sm rounded-3" onClick={() => handleDownloadPDF(f.id)}>PDF</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
+              <form onSubmit={handleOCRSubmit}>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium mb-1">Fichier (Image ou PDF)</label>
+                  <input
+                    type="file"
+                    className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-green-500"
+                    onChange={handleFileChange}
+                    accept="image/*,.pdf"
+                  />
+                </div>
+                {ocrError && <div className="text-red-500 text-sm mb-4">{ocrError}</div>}
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  type="submit"
+                  className="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition"
+                >
+                  Analyser et Ajouter
+                </motion.button>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

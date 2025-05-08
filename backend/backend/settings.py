@@ -169,23 +169,52 @@ TIME_ZONE = "UTC"
 USE_I18N = True
 
 USE_TZ = True
-
+CORS_ALLOW_ALL_ORIGINS = True
+# ... other settings ...
 # ... other settings ...
 
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+PAYPAL_CLIENT_ID = os.getenv('PAYPAL_CLIENT_ID')
+PAYPAL_CLIENT_SECRET = os.getenv('PAYPAL_CLIENT_SECRET')
+PAYPAL_MODE = os.getenv('PAYPAL_MODE', 'sandbox')
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
 # Stripe Configuration
-STRIPE_SECRET_KEY = 'sk_test_51JxyzABC1234567890abcdef'  # Placeholder Stripe secret key
-STRIPE_PUBLISHABLE_KEY = 'pk_test_51JxyzABC1234567890abcdef'  # Placeholder Stripe publishable key
+# Stripe Configuration
+# Stripe Configuration
+STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY', 'sk_test_51RLUW41BJjYJsorI9vwXfQF2bHpFcW0Q3AlLi0D4btN3AQIe9WeafyAOSp88UOZYsA4ypJZCVLJVMJbyfPvtyDUb00hFF7bKz1')
+STRIPE_PUBLISHABLE_KEY = os.getenv('STRIPE_PUBLISHABLE_KEY', 'pk_test_51RLUW41BJjYJsorIeib2y8wqTu44vLSlzQOyBo2hauVismL9UIZ28FKOGU1UpDUNsDZTCucAC1FO4LsGEP9wEmfz00BuCqCBPV')
 
 # PayPal Configuration
-PAYPAL_CLIENT_ID = 'Axyz1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef'  # Placeholder PayPal client ID
-PAYPAL_CLIENT_SECRET = 'Exyz1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef'  # Placeholder PayPal client secret
-PAYPAL_MODE = 'sandbox'  # Use 'live' for production
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/5.1/howto/static-files/
+PAYPAL_CLIENT_ID = os.getenv('PAYPAL_CLIENT_ID', 'AdGfUh7mygajTCjTPNHq5BBl4yQOl_Zru_yh4abu2nE-idLQCSOG4oT2EzyslZ5szg1SNU74m-9Lb3TJ')
+PAYPAL_CLIENT_SECRET = os.getenv('PAYPAL_CLIENT_SECRET', 'EFkvpOnvWVmdV0QhW3WUJoednfGpgwiQ_IedAuyMeOtseCytu5mHmSWEriwbZr2OOJq73neIihq748GX')
+PAYPAL_MODE = os.getenv('PAYPAL_MODE', 'sandbox')
 
 STATIC_URL = "static/"
 
-# Default primary key field type
-# https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
-
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        '': {
+            'handlers': ['console'],
+            'level': 'INFO',
+        },
+    },
+}
+TWILIO_ACCOUNT_SID = 'AC3b93d56ba838070dab70d63731278da7'
+TWILIO_AUTH_TOKEN = '27a231ee2933673abff7ead621b440d1'
+TWILIO_PHONE_NUMBER = '+19787084293'
+EXCHANGE_RATE_TND_TO_USD = 0.32

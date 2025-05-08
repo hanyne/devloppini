@@ -1,41 +1,33 @@
 from django.contrib import admin
+from .models import Client, Devis, Facture, Historique, LigneFacture, Payment, Service, ProduitDetail, UserProfile
 
-# Register your models here.
-from django.contrib import admin
-from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from django.contrib.auth.models import User
-from .models import Client, Devis, Facture, Historique, LigneFacture, Payment, Service, UserProfile
+@admin.register(UserProfile)
+class UserProfileAdmin(admin.ModelAdmin):
+    list_display = ('user', 'role')
+    search_fields = ('user__username', 'role')
 
-# Inline pour UserProfile
-class UserProfileInline(admin.StackedInline):
-    model = UserProfile
-    can_delete = False
-    verbose_name_plural = 'Profil utilisateur'
-
-# Étendre l'admin de User pour inclure UserProfile
-class UserAdmin(BaseUserAdmin):
-    inlines = (UserProfileInline,)
-
-# Déréférencer l'admin par défaut de User et réenregistrer avec notre version
-admin.site.unregister(User)
-admin.site.register(User, UserAdmin)
-
-# Enregistrement des autres modèles
 @admin.register(Service)
 class ServiceAdmin(admin.ModelAdmin):
-    list_display = ('name', 'description', 'created_at')
-    search_fields = ('name',)
+    list_display = ('name', 'category', 'price_range', 'created_at')
+    search_fields = ('name', 'description')
+    list_filter = ('category',)
 
 @admin.register(Client)
 class ClientAdmin(admin.ModelAdmin):
     list_display = ('name', 'email', 'phone')
-    search_fields = ('name', 'email')
+    search_fields = ('name', 'email', 'phone')
 
 @admin.register(Historique)
 class HistoriqueAdmin(admin.ModelAdmin):
     list_display = ('client', 'action', 'date')
     search_fields = ('client__name', 'action')
     list_filter = ('date',)
+
+@admin.register(ProduitDetail)
+class ProduitDetailAdmin(admin.ModelAdmin):
+    list_display = ('devis', 'type_site', 'design_personnalise', 'integration_seo')
+    search_fields = ('type_site', 'fonctionnalites')
+    list_filter = ('type_site', 'design_personnalise', 'integration_seo')
 
 @admin.register(Devis)
 class DevisAdmin(admin.ModelAdmin):
@@ -52,16 +44,10 @@ class FactureAdmin(admin.ModelAdmin):
 @admin.register(LigneFacture)
 class LigneFactureAdmin(admin.ModelAdmin):
     list_display = ('facture', 'designation', 'prix_unitaire', 'quantite', 'total')
-    search_fields = ('facture__invoice_number', 'designation')
+    search_fields = ('designation', 'facture__invoice_number')
 
 @admin.register(Payment)
 class PaymentAdmin(admin.ModelAdmin):
-    list_display = ('facture', 'stripe_payment_intent_id', 'amount', 'status', 'created_at')
-    search_fields = ('stripe_payment_intent_id', 'facture__invoice_number')
-    list_filter = ('status', 'created_at')
-
-@admin.register(UserProfile)
-class UserProfileAdmin(admin.ModelAdmin):
-    list_display = ('user', 'role')
-    search_fields = ('user__username', 'role')
-    list_filter = ('role',)
+    list_display = ('facture', 'paypal_order_id', 'amount', 'currency', 'status', 'created_at')
+    search_fields = ('paypal_order_id', 'facture__invoice_number')
+    list_filter = ('status', 'currency', 'created_at')

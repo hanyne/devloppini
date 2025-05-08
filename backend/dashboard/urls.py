@@ -1,11 +1,11 @@
-
 from django.urls import path
 from .views import (
     CustomTokenObtainPairView, ClientLoginView, RegisterView, ServiceListView,
     PublicDevisCreateView, HistoriqueListView, HistoriqueCreateView,
     ClientListCreateView, ClientDetailView, DevisListCreateView, DevisDetailView,
     FactureListCreateView, FactureDetailView, FactureOCRView, FacturePDFView,
-    PaymentIntentView, PaymentConfirmView, DevisListView, DevisUpdateView
+    PaymentIntentView, PaymentConfirmView, DevisListView, DevisUpdateView,
+    ClientFactureListView, PayPalPaymentCreateView, PayPalPaymentExecuteView, PayPalPaymentCancelView, ChatView
 )
 
 urlpatterns = [
@@ -28,4 +28,9 @@ urlpatterns = [
     path('payment/<int:payment_id>/confirm/', PaymentConfirmView.as_view(), name='payment-confirm'),
     path('devis/list/', DevisListView.as_view(), name='devis-list'),
     path('devis/<int:pk>/update/', DevisUpdateView.as_view(), name='devis-update'),
+    path('factures/client/', ClientFactureListView.as_view(), name='client-facture-list'),
+    path('payment/<int:facture_id>/paypal/create/', PayPalPaymentCreateView.as_view(), name='paypal-payment-create'),
+    path('payment/paypal/execute/', PayPalPaymentExecuteView.as_view(), name='paypal-payment-execute'),
+    path('payment/paypal/cancel/', PayPalPaymentCancelView.as_view(), name='paypal-payment-cancel'),
+    path('chat/', ChatView.as_view(), name='chat'),
 ]

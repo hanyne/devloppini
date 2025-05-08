@@ -1,8 +1,9 @@
-
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { jwtDecode } from 'jwt-decode';
-import '../App.css';
+import { toast } from 'react-toastify';
+import { motion } from 'framer-motion';
+import { FaEnvelope, FaLock, FaSignInAlt } from 'react-icons/fa';
 
 const Login = ({ setIsAuthenticated, setUserRole }) => {
   const [email, setEmail] = useState('');
@@ -48,52 +49,93 @@ const Login = ({ setIsAuthenticated, setUserRole }) => {
       console.log('Étape 9 - Redirection selon le rôle');
       if (userRole === 'admin') {
         console.log('Redirection vers /dashboard');
+        toast.success('Connexion réussie ! Redirection vers le tableau de bord...');
         navigate('/dashboard');
       } else {
         console.log('Redirection vers /home');
+        toast.success('Connexion réussie ! Redirection vers l’accueil...');
         navigate('/home');
       }
     } catch (err) {
       console.error('Étape 10 - Erreur lors de la connexion:', err);
       setError(err.message);
+      toast.error(err.message);
     }
   };
 
   return (
-    <div className="container mt-5">
-      <div className="row justify-content-center">
-        <div className="col-md-4">
-          <div className="card shadow-sm">
-            <div className="card-body">
-              <h3 className="card-title text-center">Connexion</h3>
-              <form onSubmit={handleSubmit}>
-                <div className="mb-3">
-                  <label className="form-label">Email</label>
-                  <input
-                    type="email"
-                    className="form-control"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="mb-3">
-                  <label className="form-label">Mot de passe</label>
-                  <input
-                    type="password"
-                    className="form-control"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                  />
-                </div>
-                {error && <div className="alert alert-danger">{error}</div>}
-                <button type="submit" className="btn btn-primary w-100">Se connecter</button>
-              </form>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-300 dark:from-gray-800 dark:to-gray-900">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-md"
+      >
+        <h2 className="text-3xl font-bold text-center text-gray-800 dark:text-gray-100 mb-6">Connexion</h2>
+
+        {error && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="bg-red-100 text-red-800 p-3 rounded-lg mb-4"
+          >
+            {error}
+          </motion.div>
+        )}
+
+        <form onSubmit={handleSubmit}>
+          <div className="mb-4 relative">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Email
+            </label>
+            <div className="flex items-center border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus-within:ring-2 focus-within:ring-indigo-500">
+              <FaEnvelope className="text-gray-500 dark:text-gray-400 ml-3" />
+              <input
+                type="email"
+                className="w-full p-2 border-0 rounded-lg bg-transparent focus:ring-0 dark:text-white"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="votre@email.com"
+                required
+              />
             </div>
           </div>
-        </div>
-      </div>
+
+          <div className="mb-6 relative">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Mot de passe
+            </label>
+            <div className="flex items-center border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus-within:ring-2 focus-within:ring-indigo-500">
+              <FaLock className="text-gray-500 dark:text-gray-400 ml-3" />
+              <input
+                type="password"
+                className="w-full p-2 border-0 rounded-lg bg-transparent focus:ring-0 dark:text-white"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+              />
+            </div>
+          </div>
+
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            type="submit"
+            className="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 transition flex items-center justify-center"
+          >
+            <FaSignInAlt className="mr-2" />
+            Se connecter
+          </motion.button>
+        </form>
+
+        <p className="text-center text-gray-600 dark:text-gray-400 mt-4">
+          Pas encore de compte ?{' '}
+          <Link to="/register" className="text-indigo-500 hover:underline">
+            S’inscrire
+          </Link>
+        </p>
+      </motion.div>
     </div>
   );
 };
