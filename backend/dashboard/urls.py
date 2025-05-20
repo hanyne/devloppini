@@ -1,14 +1,19 @@
+# urls.py
 from django.urls import path
 from .views import (
-    CustomTokenObtainPairView, ClientLoginView, RegisterView, ServiceListView,
+    AdminTestimonialListView, AdminTestimonialUpdateView, CustomTokenObtainPairView, ClientLoginView, RegisterView, ServiceListView,
     PublicDevisCreateView, HistoriqueListView, HistoriqueCreateView,
     ClientListCreateView, ClientDetailView, DevisListCreateView, DevisDetailView,
     FactureListCreateView, FactureDetailView, FactureOCRView, FacturePDFView,
     PaymentIntentView, PaymentConfirmView, DevisListView, DevisUpdateView,
-    ClientFactureListView, PayPalPaymentCreateView, PayPalPaymentExecuteView, PayPalPaymentCancelView, ChatView
+    ClientFactureListView, PayPalPaymentCreateView, PayPalPaymentExecuteView, 
+    PayPalPaymentCancelView, ChatView, TestimonialListView, TestimonialCreateView
 )
 
 urlpatterns = [
+    # ... Autres URLs existantes ...
+    path('testimonials/', TestimonialListView.as_view(), name='testimonial-list'),
+    path('testimonials/create/', TestimonialCreateView.as_view(), name='testimonial-create'),
     path('token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('client/token/', ClientLoginView.as_view(), name='client_token'),
     path('register/', RegisterView.as_view(), name='register'),
@@ -33,4 +38,6 @@ urlpatterns = [
     path('payment/paypal/execute/', PayPalPaymentExecuteView.as_view(), name='paypal-payment-execute'),
     path('payment/paypal/cancel/', PayPalPaymentCancelView.as_view(), name='paypal-payment-cancel'),
     path('chat/', ChatView.as_view(), name='chat'),
+    path('admin/testimonials/', AdminTestimonialListView.as_view(), name='admin-testimonial-list'),
+    path('admin/testimonials/<int:pk>/update/', AdminTestimonialUpdateView.as_view(), name='admin-testimonial-update'),
 ]

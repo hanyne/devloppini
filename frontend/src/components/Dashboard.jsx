@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Chart as ChartJS, ArcElement, BarElement, LineElement, CategoryScale, LinearScale, PointElement, Title, Tooltip, Legend } from 'chart.js';
 import { Pie, Bar, Line } from 'react-chartjs-2';
+import axios from 'axios';
 import '../App.css';
 
 // Register Chart.js components
@@ -10,6 +11,7 @@ const Dashboard = () => {
   const [clients, setClients] = useState([]);
   const [devis, setDevis] = useState([]);
   const [factures, setFactures] = useState([]);
+  const [testimonials, setTestimonials] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [darkMode, setDarkMode] = useState(false);
@@ -26,25 +28,29 @@ const Dashboard = () => {
       const headers = { 'Authorization': `Bearer ${token}` };
 
       try {
-        const [clientsResponse, devisResponse, facturesResponse] = await Promise.all([
+        const [clientsResponse, devisResponse, facturesResponse, testimonialsResponse] = await Promise.all([
           fetch('http://localhost:8000/api/clients/', { headers }),
           fetch('http://localhost:8000/api/devis/', { headers }),
           fetch('http://localhost:8000/api/factures/', { headers }),
+          fetch('http://localhost:8000/api/admin/testimonials/', { headers }), // Nouvelle requête pour les avis
         ]);
 
         if (!clientsResponse.ok) throw new Error('Erreur lors du chargement des clients');
         if (!devisResponse.ok) throw new Error('Erreur lors du chargement des devis');
         if (!facturesResponse.ok) throw new Error('Erreur lors du chargement des factures');
+        if (!testimonialsResponse.ok) throw new Error('Erreur lors du chargement des avis');
 
-        const [clientsData, devisData, facturesData] = await Promise.all([
+        const [clientsData, devisData, facturesData, testimonialsData] = await Promise.all([
           clientsResponse.json(),
           devisResponse.json(),
           facturesResponse.json(),
+          testimonialsResponse.json(),
         ]);
 
         setClients(Array.isArray(clientsData) ? clientsData : []);
         setDevis(Array.isArray(devisData) ? devisData : []);
         setFactures(Array.isArray(facturesData) ? facturesData : []);
+        setTestimonials(Array.isArray(testimonialsData) ? testimonialsData : []);
         setLoading(false);
       } catch (err) {
         console.error('Erreur:', err);
@@ -55,6 +61,26 @@ const Dashboard = () => {
 
     fetchData();
   }, []);
+
+  // Fonction pour approuver ou désapprouver un avis
+  const handleToggleApproval = async (testimonialId, isApproved) => {
+    const token = localStorage.getItem('access_token');
+    try {
+      await axios.put(
+        `http://localhost:8000/api/admin/testimonials/${testimonialId}/update/`,
+        { is_approved: !isApproved },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setTestimonials((prev) =>
+        prev.map((testimonial) =>
+          testimonial.id === testimonialId ? { ...testimonial, is_approved: !isApproved } : testimonial
+        )
+      );
+    } catch (err) {
+      console.error('Erreur lors de la mise à jour de l’avis:', err);
+      setError('Erreur lors de la mise à jour de l’avis.');
+    }
+  };
 
   // Toggle dark mode
   const toggleDarkMode = () => {
@@ -173,6 +199,7 @@ const Dashboard = () => {
                     Factures
                   </a>
                 </li>
+                
               </ul>
             </nav>
             <button
@@ -267,6 +294,48 @@ const Dashboard = () => {
                         scales: { y: { beginAtZero: true } },
                       }}
                     />
+                  </div>
+                </div>
+
+                {/* Testimonials Management */}
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 mb-6">
+                  <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Gestion des Avis</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead>
+                        <tr className="text-gray-600 dark:text-gray-300">
+                          <th className="p-2">Client</th>
+                          <th className="p-2">Contenu</th>
+                          <th className="p-2">Note</th>
+                          <th className="p-2">Statut</th>
+                          <th className="p-2">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {testimonials.map((testimonial) => (
+                          <tr key={testimonial.id} className="border-t dark:border-gray-700">
+                            <td className="p-2 text-gray-800 dark:text-white">{testimonial.client.name}</td>
+                            <td className="p-2 text-gray-800 dark:text-white">{testimonial.content}</td>
+                            <td className="p-2 text-gray-800 dark:text-white">{testimonial.rating}/5</td>
+                            <td className="p-2 text-gray-800 dark:text-white">
+                              {testimonial.is_approved ? 'Approuvé' : 'En attente'}
+                            </td>
+                            <td className="p-2">
+                              <button
+                                onClick={() => handleToggleApproval(testimonial.id, testimonial.is_approved)}
+                                className={`px-4 py-2 rounded text-white ${
+                                  testimonial.is_approved
+                                    ? 'bg-red-500 hover:bg-red-600'
+                                    : 'bg-green-500 hover:bg-green-600'
+                                }`}
+                              >
+                                {testimonial.is_approved ? 'Désapprouver' : 'Approuver'}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
 

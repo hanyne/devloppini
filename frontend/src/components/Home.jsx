@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FaEnvelope, FaCommentDots, FaLaptopCode, FaCloud, FaMobileAlt, FaLock } from 'react-icons/fa';
+import { FaEnvelope, FaCommentDots, FaLaptopCode, FaCloud, FaMobileAlt, FaLock, FaStar } from 'react-icons/fa';
+import {jwtDecode} from 'jwt-decode';
 
 // Default images
 const defaultAboutImage = "https://www.actian.com/wp-content/uploads/2023/11/data-management-aspects-for-your-it-team.jpg";
@@ -17,6 +18,7 @@ const carouselImages = [
 
 const Home = () => {
   const [services, setServices] = useState([]);
+  const [testimonials, setTestimonials] = useState([]);
   const [errorMessage, setErrorMessage] = useState(null);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -25,27 +27,55 @@ const Home = () => {
   ]);
   const [chatInput, setChatInput] = useState('');
   const [chatError, setChatError] = useState(null);
+  const [testimonialInput, setTestimonialInput] = useState('');
+  const [testimonialRating, setTestimonialRating] = useState(5);
+  const [isClient, setIsClient] = useState(false);
+  const [testimonialError, setTestimonialError] = useState(null);
   const messagesEndRef = useRef(null);
   const timeoutRef = useRef(null);
 
   useEffect(() => {
+    // Vérifier si l'utilisateur est authentifié et a le rôle "client"
+    const token = localStorage.getItem('access_token');
+    if (token) {
+      try {
+        const decoded = jwtDecode(token);
+        setIsClient(decoded.role === 'client');
+      } catch (e) {
+        console.error('Erreur lors du décodage du token:', e);
+      }
+    }
+
+    // Récupérer les services
     const fetchServices = async () => {
       try {
         console.log('Récupération des services depuis /api/services/');
         const response = await fetch('http://localhost:8000/api/services/');
-        console.log('Statut de la réponse:', response.status);
-        if (!response.ok) {
-          throw new Error(`Erreur HTTP: ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`Erreur HTTP: ${response.status}`);
         const data = await response.json();
-        console.log('Données des services:', data);
         setServices(data);
       } catch (error) {
         console.error('Erreur lors de la récupération des services:', error);
         setErrorMessage('Impossible de charger les services. Veuillez réessayer plus tard.');
       }
     };
+
+    // Récupérer les avis approuvés
+    const fetchTestimonials = async () => {
+      try {
+        console.log('Récupération des avis depuis /api/testimonials/');
+        const response = await fetch('http://localhost:8000/api/testimonials/');
+        if (!response.ok) throw new Error(`Erreur HTTP: ${response.status}`);
+        const data = await response.json();
+        setTestimonials(data);
+      } catch (error) {
+        console.error('Erreur lors de la récupération des avis:', error);
+        setErrorMessage('Impossible de charger les avis. Veuillez réessayer plus tard.');
+      }
+    };
+
     fetchServices();
+    fetchTestimonials();
 
     const interval = setInterval(() => {
       setCurrentSlide((prev) => (prev + 1) % carouselImages.length);
@@ -59,9 +89,7 @@ const Home = () => {
 
   const handleMessage = useCallback((message) => {
     return new Promise((resolve) => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
       timeoutRef.current = setTimeout(async () => {
         try {
           console.log('Sending message to /api/chat/:', message);
@@ -70,7 +98,6 @@ const Home = () => {
             { message },
             { headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` } }
           );
-          console.log('Received response from /api/chat/:', response.data);
           setChatError(null);
           resolve(response.data.reply);
         } catch (err) {
@@ -93,7 +120,6 @@ const Home = () => {
     if (!chatInput.trim()) return;
 
     const userMessage = chatInput;
-    console.log('User input:', userMessage);
     setMessages((prev) => {
       const newMessages = [...prev, { text: userMessage, sender: 'user' }];
       if (newMessages.length > 50) newMessages.shift();
@@ -109,6 +135,29 @@ const Home = () => {
     });
   };
 
+  const handleSubmitTestimonial = async (e) => {
+    e.preventDefault();
+    if (!testimonialInput.trim()) {
+      setTestimonialError('L’avis ne peut pas être vide.');
+      return;
+    }
+
+    try {
+      const response = await axios.post(
+        'http://localhost:8000/api/testimonials/create/',
+        { content: testimonialInput, rating: testimonialRating },
+        { headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` } }
+      );
+      setTestimonialError(null);
+      setTestimonialInput('');
+      setTestimonialRating(5);
+      alert('Avis soumis avec succès. En attente d’approbation.');
+    } catch (err) {
+      console.error('Erreur lors de la soumission de l’avis:', err);
+      setTestimonialError(err.response?.data?.error || 'Erreur lors de la soumission de l’avis. Veuillez réessayer.');
+    }
+  };
+
   useEffect(() => {
     if (isChatOpen) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -117,13 +166,11 @@ const Home = () => {
 
   useEffect(() => {
     return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
   }, []);
 
-  // Default services based on UNIO LAB information
+  // Default services
   const defaultServices = [
     {
       id: 1,
@@ -333,37 +380,84 @@ const Home = () => {
             Ce que disent nos clients
           </motion.h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <motion.div
-              initial={{ opacity: 0, x: -50 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.6 }}
-              viewport={{ once: true }}
-              className="bg-gray-50 dark:bg-gray-700 p-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300"
-            >
-              <p className="text-gray-600 dark:text-gray-300 italic mb-4">"UNIO LAB a créé un site web incroyable pour nous en un temps record !"</p>
-              <p className="text-indigo-800 dark:text-indigo-300 font-semibold">- Ahmed, Entrepreneur</p>
-            </motion.div>
-            <motion.div
-              initial={{ opacity: 0 }}
-              whileInView={{ opacity: 1 }}
-              transition={{ duration: 0.6 }}
-              viewport={{ once: true }}
-              className="bg-gray-50 dark:bg-gray-700 p-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300"
-            >
-              <p className="text-gray-600 dark:text-gray-300 italic mb-4">"Une équipe professionnelle et très réactive. Je recommande !"</p>
-              <p className="text-indigo-800 dark:text-indigo-300 font-semibold">- Sarah, Designer</p>
-            </motion.div>
-            <motion.div
-              initial={{ opacity: 0, x: 50 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.6 }}
-              viewport={{ once: true }}
-              className="bg-gray-50 dark:bg-gray-700 p-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300"
-            >
-              <p className="text-gray-600 dark:text-gray-300 italic mb-4">"Application mobile parfaite grâce à leur expertise."</p>
-              <p className="text-indigo-800 dark:text-indigo-300 font-semibold">- Karim, PDG</p>
-            </motion.div>
+            {testimonials.length > 0 ? (
+              testimonials.map((testimonial) => (
+                <motion.div
+                  key={testimonial.id}
+                  initial={{ opacity: 0 }}
+                  whileInView={{ opacity: 1 }}
+                  transition={{ duration: 0.6 }}
+                  viewport={{ once: true }}
+                  className="bg-gray-50 dark:bg-gray-700 p-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300"
+                >
+                  <div className="flex items-center mb-4">
+                    {[...Array(testimonial.rating)].map((_, i) => (
+                      <FaStar key={i} className="text-yellow-400" />
+                    ))}
+                  </div>
+                  <p className="text-gray-600 dark:text-gray-300 italic mb-4">{`"${testimonial.content}"`}</p>
+                  <p className="text-indigo-800 dark:text-indigo-300 font-semibold">
+                    - {testimonial.client.name}
+                  </p>
+                </motion.div>
+              ))
+            ) : (
+              <p className="text-center text-gray-600 dark:text-gray-300 col-span-3">
+                Aucun avis disponible pour le moment.
+              </p>
+            )}
           </div>
+
+          {/* Formulaire pour ajouter un avis (clients authentifiés uniquement) */}
+          {isClient && (
+            <div className="mt-12">
+              <motion.h3
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6 }}
+                viewport={{ once: true }}
+                className="text-2xl font-semibold text-center text-gray-800 dark:text-gray-100 mb-6"
+              >
+                Laissez votre avis
+              </motion.h3>
+              <form onSubmit={handleSubmitTestimonial} className="max-w-lg mx-auto">
+                <div className="mb-4">
+                  <label className="block text-gray-700 dark:text-gray-300 mb-2">Votre avis</label>
+                  <textarea
+                    value={testimonialInput}
+                    onChange={(e) => setTestimonialInput(e.target.value)}
+                    placeholder="Partagez votre expérience avec UNIO LAB..."
+                    className="w-full p-3 rounded-lg border dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    rows="4"
+                  ></textarea>
+                </div>
+                <div className="mb-4">
+                  <label className="block text-gray-700 dark:text-gray-300 mb-2">Note (1 à 5)</label>
+                  <div className="flex space-x-2">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        type="button"
+                        onClick={() => setTestimonialRating(star)}
+                        className={`text-2xl ${testimonialRating >= star ? 'text-yellow-400' : 'text-gray-400'}`}
+                      >
+                        <FaStar />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {testimonialError && (
+                  <p className="text-red-500 text-sm mb-4">{testimonialError}</p>
+                )}
+                <button
+                  type="submit"
+                  className="bg-indigo-600 text-white px-6 py-3 rounded-full font-semibold hover:bg-indigo-700 transition-all duration-300"
+                >
+                  Soumettre l’avis
+                </button>
+              </form>
+            </div>
+          )}
         </div>
       </section>
 

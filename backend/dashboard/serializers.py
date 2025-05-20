@@ -1,7 +1,7 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from .models import Client, Devis, Facture, Historique, LigneFacture, Payment, ProduitDetail, Service, UserProfile
+from .models import Client, Devis, Facture, Historique, LigneFacture, Payment, ProduitDetail, Service, UserProfile, Testimonial
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
@@ -16,6 +16,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             except UserProfile.DoesNotExist:
                 token['role'] = 'client'
         return token
+
 
 class ServiceSerializer(serializers.ModelSerializer):
     class Meta:
@@ -126,3 +127,20 @@ class FactureSerializer(serializers.ModelSerializer):
         for ligne_data in lignes_data:
             LigneFacture.objects.create(facture=instance, **ligne_data)
         return instance
+class TestimonialSerializer(serializers.ModelSerializer):
+    client = ClientSerializer(read_only=True)
+    client_id = serializers.PrimaryKeyRelatedField(queryset=Client.objects.all(), source='client', write_only=True)
+
+    class Meta:
+        model = Testimonial
+        fields = ['id', 'client', 'client_id', 'content', 'rating', 'created_at', 'is_approved']
+
+    def validate_content(self, value):
+        if not value or not value.strip():
+            raise serializers.ValidationError("Le contenu de l'avis ne peut pas être vide.")
+        return value.strip()
+
+    def validate_rating(self, value):
+        if value < 1 or value > 5:
+            raise serializers.ValidationError("La note doit être comprise entre 1 et 5.")
+        return value

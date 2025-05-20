@@ -124,3 +124,12 @@ class Payment(models.Model):
 
     def __str__(self):
         return f"Payment {self.paypal_order_id} for Facture {self.facture.invoice_number}"
+class Testimonial(models.Model):
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='testimonials')
+    content = models.TextField()
+    rating = models.IntegerField(choices=[(i, i) for i in range(1, 6)], default=5)
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_approved = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"Avis de {self.client.name} - {self.rating}/5"

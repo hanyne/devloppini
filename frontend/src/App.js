@@ -12,9 +12,11 @@ import DevisForm from './components/DevisForm';
 import Contact from './components/Contact';
 import PaymentDevis from './components/PaymentDevis';
 import Chat from './components/Chat';
+import ClientDevisList from './components/ClientDevisList';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import 'react-toastify/dist/ReactToastify.css';
 import { ToastContainer } from 'react-toastify';
+
 const PaymentSuccess = () => {
     const { factureId } = useParams();
     useEffect(() => {
@@ -137,13 +139,13 @@ function App() {
     return (
         <Router>
             <div>
-            <ToastContainer position="top-right" autoClose={3000} />
+                <ToastContainer position="top-right" autoClose={3000} />
                 <nav className="bg-gradient-to-r from-gray-800 to-blue-900 text-white shadow-lg sticky top-0 z-50">
                     <div className="container mx-auto px-4 py-4 flex justify-between items-center">
                         <Link to="/" className="flex items-center space-x-2">
-                            <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcShvii6mhmvlqT6WfQVFKa7HtDEIwpwswxx8g&s" alt="Logo" className="h-8 w-8" />
+                            <img src={'/logo.png'} alt="Logo" className="h-8 w-8" />
                             <span className="text-2xl font-bold tracking-tight text-white hover:text-yellow-300 transition-colors">
-                                Devloppini
+                                SMARTBILL
                             </span>
                         </Link>
                         <div className="hidden md:flex space-x-6 items-center">
@@ -172,6 +174,9 @@ function App() {
                                             </Link>
                                             <Link to="/devis-form" className="text-white font-medium hover:text-yellow-300 transition-colors">
                                                 Demander un Devis
+                                            </Link>
+                                            <Link to="/client-devis" className="text-white font-medium hover:text-yellow-300 transition-colors">
+                                                Mes Devis
                                             </Link>
                                             <Link to="/payment-devis" className="text-white font-medium hover:text-yellow-300 transition-colors">
                                                 Mes Factures
@@ -222,6 +227,7 @@ function App() {
                                             <>
                                                 <Link to="/home" className="text-white font-medium hover:text-yellow-300 transition-colors" onClick={toggleMenu}>Accueil</Link>
                                                 <Link to="/devis-form" className="text-white font-medium hover:text-yellow-300 transition-colors" onClick={toggleMenu}>Demander un Devis</Link>
+                                                <Link to="/client-devis" className="text-white font-medium hover:text-yellow-300 transition-colors" onClick={toggleMenu}>Mes Devis</Link>
                                                 <Link to="/payment-devis" className="text-white font-medium hover:text-yellow-300 transition-colors" onClick={toggleMenu}>Mes Factures</Link>
                                                 <Link to="/contact" className="text-white font-medium hover:text-yellow-300 transition-colors" onClick={toggleMenu}>Contact</Link>
                                                 <Link to="/chat" className="text-white font-medium hover:text-yellow-300 transition-colors" onClick={toggleMenu}>
@@ -247,6 +253,7 @@ function App() {
                 <Routes>
                     <Route path="/home" element={<Home />} />
                     <Route path="/devis-form" element={<DevisForm />} />
+                    <Route path="/client-devis" element={<ProtectedRoute allowedRole="client"><ClientDevisList /></ProtectedRoute>} />
                     <Route path="/contact" element={<Contact />} />
                     <Route path="/login" element={<Login setIsAuthenticated={setIsAuthenticated} setUserRole={setUserRole} />} />
                     <Route path="/register" element={<Register />} />
@@ -259,7 +266,6 @@ function App() {
                     <Route path="/api/payment/paypal/execute/" element={<PayPalExecuteHandler />} />
                     <Route path="/" element={<Navigate to={isAuthenticated ? (userRole === 'admin' ? '/dashboard' : '/home') : '/login'} />} />
                     <Route path="/chat" element={<ProtectedRoute allowedRole="client"><Chat /></ProtectedRoute>} />
-                    <Route path="/payment/success/:factureId" element={<PaymentSuccess />} />
                 </Routes>
             </div>
         </Router>

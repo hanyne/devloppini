@@ -21,11 +21,11 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
 from reportlab.platypus import Table, TableStyle
-from .models import Client, Devis, Facture, Historique, LigneFacture, Payment, Service, UserProfile
+from .models import Client, Devis, Facture, Historique, LigneFacture, Payment, Service, Testimonial, UserProfile
 from .serializers import (
     ClientSerializer, DevisSerializer, FactureSerializer,
     HistoriqueSerializer, PaymentSerializer, LigneFactureSerializer, ProduitDetailSerializer, ServiceSerializer,
-    CustomTokenObtainPairSerializer
+    CustomTokenObtainPairSerializer, TestimonialSerializer
 )
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -408,13 +408,36 @@ class FactureListCreateView(generics.ListCreateAPIView):
 class FactureDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request, facture_id):
+    def get(self, request, pk):
         try:
-            facture = Facture.objects.get(id=facture_id)
+            facture = Facture.objects.get(pk=pk)
+            if request.user.profile.role != 'admin' and facture.client.user != request.user:
+                return Response({"error": "Accès non autorisé"}, status=status.HTTP_403_FORBIDDEN)
             serializer = FactureSerializer(facture)
-            return Response(serializer.data, status=status.HTTP_200_OK)
+            return Response(serializer.data)
         except Facture.DoesNotExist:
-            logger.error(f"Facture not found: {facture_id}")
+            return Response({"error": "Facture non trouvée"}, status=status.HTTP_404_NOT_FOUND)
+
+    def delete(self, request, pk):
+        try:
+            facture = Facture.objects.get(pk=pk)
+            if request.user.profile.role != 'admin' and facture.client.user != request.user:
+                return Response({"error": "Accès non autorisé"}, status=status.HTTP_403_FORBIDDEN)
+            facture.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except Facture.DoesNotExist:
+            return Response({"error": "Facture non trouvée"}, status=status.HTTP_404_NOT_FOUND)
+    def put(self, request, pk):
+        try:
+            facture = Facture.objects.get(pk=pk)
+            if request.user.profile.role != 'admin' and facture.client.user != request.user:
+                return Response({"error": "Accès non autorisé"}, status=status.HTTP_403_FORBIDDEN)
+            serializer = FactureSerializer(facture, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Facture.DoesNotExist:
             return Response({"error": "Facture non trouvée"}, status=status.HTTP_404_NOT_FOUND)
 class FactureOCRView(APIView):
     permission_classes = [IsAuthenticated]
@@ -929,3 +952,85 @@ class ChatView(APIView):
                 {'reply': 'Désolé, une erreur s\'est produite. Essayez à nouveau.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+class TestimonialListView(generics.ListAPIView):
+    queryset = Testimonial.objects.filter(is_approved=True)
+    serializer_class = TestimonialSerializer
+    permission_classes = [AllowAny]
+
+class TestimonialCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            token = request.headers.get('Authorization', '').split('Bearer ')[1]
+            decoded_token = jwt.decode(token, options={"verify_signature": False})
+            role = decoded_token.get('role')
+            client_id = decoded_token.get('client_id')
+
+            if role != 'client':
+                return Response({"error": "Seuls les clients peuvent soumettre un avis."}, status=status.HTTP_403_FORBIDDEN)
+
+            if not client_id:
+                logger.error("client_id missing in token")
+                return Response({"error": "Client non authentifié. client_id manquant dans le token."}, status=status.HTTP_401_UNAUTHORIZED)
+
+            try:
+                client = Client.objects.get(id=client_id)
+                logger.info(f"Client found: {client.id} - {client.email}")
+            except Client.DoesNotExist:
+                logger.error(f"Client not found for client_id: {client_id}")
+                return Response({"error": "Client non trouvé."}, status=status.HTTP_404_NOT_FOUND)
+
+            testimonial_data = {
+                'client_id': client.id,
+                'content': request.data.get('content'),
+                'rating': request.data.get('rating'),
+            }
+            serializer = TestimonialSerializer(data=testimonial_data)
+            if serializer.is_valid():
+                serializer.save()
+                logger.info(f"Avis créé par le client {client.email}")
+                return Response({
+                    'message': 'Avis soumis avec succès. En attente d’approbation.',
+                    'testimonial': serializer.data
+                }, status=status.HTTP_201_CREATED)
+            logger.error(f"Validation errors: {serializer.errors}")
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        except Exception as e:
+            logger.error(f"Error in TestimonialCreateView: {str(e)}")
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+class AdminTestimonialListView(generics.ListAPIView):
+    queryset = Testimonial.objects.all()  # Liste tous les avis, approuvés ou non
+    serializer_class = TestimonialSerializer
+    permission_classes = [IsAdminUser]
+
+class AdminTestimonialUpdateView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def put(self, request, pk):
+        try:
+            testimonial = Testimonial.objects.get(pk=pk)
+            is_approved = request.data.get('is_approved')
+            if is_approved is None:
+                return Response({"error": "Le champ is_approved est requis."}, status=status.HTTP_400_BAD_REQUEST)
+
+            testimonial.is_approved = is_approved
+            testimonial.save()
+
+            # Ajouter une entrée dans l'historique
+            action = f"Avis #{testimonial.id} {'approuvé' if is_approved else 'désapprouvé'}"
+            Historique.objects.create(
+                client=testimonial.client,
+                action=action
+            )
+            logger.info(f"{action} par admin")
+
+            serializer = TestimonialSerializer(testimonial)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Testimonial.DoesNotExist:
+            logger.error(f"Avis non trouvé: {pk}")
+            return Response({"error": "Avis non trouvé."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"Erreur dans AdminTestimonialUpdateView: {str(e)}")
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
