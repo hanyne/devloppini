@@ -1034,3 +1034,90 @@ class AdminTestimonialUpdateView(APIView):
         except Exception as e:
             logger.error(f"Erreur dans AdminTestimonialUpdateView: {str(e)}")
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+class AdminDevisRejectWithCounterOfferView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def put(self, request, pk):
+        try:
+            devis = Devis.objects.get(pk=pk)
+            counter_offer = request.data.get('counter_offer')
+            if not counter_offer:
+                return Response(
+                    {"error": "La contre-proposition est requise."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            devis.status = 'rejected'
+            devis.counter_offer = counter_offer
+            devis.counter_offer_status = 'pending'
+            devis.save()
+
+            # Ajouter une entrée dans l'historique
+            Historique.objects.create(
+                client=devis.client,
+                action=f"Devis #{devis.id} rejeté avec contre-proposition"
+            )
+            logger.info(f"Devis #{devis.id} rejeté avec contre-proposition par admin")
+
+            serializer = DevisSerializer(devis)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Devis.DoesNotExist:
+            logger.error(f"Devis non trouvé: {pk}")
+            return Response({"error": "Devis non trouvé."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"Erreur dans AdminDevisRejectWithCounterOfferView: {str(e)}")
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+logger = logging.getLogger(__name__)
+
+class ClientCounterOfferResponseView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def put(self, request, pk):
+        try:
+            devis = Devis.objects.get(pk=pk)
+            # Vérifier que l'utilisateur est le client associé au devis
+            if not devis.client.user:
+                return Response(
+                    {"error": "Ce client n'est pas associé à un utilisateur."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            if devis.client.user != request.user:
+                return Response(
+                    {"error": "Vous n'êtes pas autorisé à répondre à cette contre-proposition."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            # Vérifier qu'il y a une contre-proposition en attente
+            if not devis.counter_offer or devis.counter_offer_status != 'pending':
+                return Response(
+                    {"error": "Aucune contre-proposition en attente pour ce devis."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            action = request.data.get('action')  # 'accept' ou 'reject'
+            if action not in ['accept', 'reject']:
+                return Response(
+                    {"error": "Action invalide. Utilisez 'accept' ou 'reject'."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            devis.counter_offer_status = 'accepted' if action == 'accept' else 'rejected'
+            if action == 'accept':
+                devis.status = 'approved'  # Approuver le devis si la contre-proposition est acceptée
+            devis.save()
+
+            # Ajouter une entrée dans l'historique
+            Historique.objects.create(
+                client=devis.client,
+                action=f"Contre-proposition pour devis #{devis.id} {'acceptée' if action == 'accept' else 'rejetée'}"
+            )
+            logger.info(f"Contre-proposition pour devis #{devis.id} {devis.counter_offer_status} par client")
+
+            serializer = DevisSerializer(devis)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Devis.DoesNotExist:
+            logger.error(f"Devis non trouvé: {pk}")
+            return Response({"error": "Devis non trouvé."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"Erreur dans ClientCounterOfferResponseView: {str(e)}")
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

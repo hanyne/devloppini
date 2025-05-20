@@ -24,6 +24,8 @@ const Devis = () => {
   const [formData, setFormData] = useState({ client_id: '', description: '', amount: '', status: 'pending' });
   const [editId, setEditId] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isCounterOfferModalOpen, setIsCounterOfferModalOpen] = useState(false);
+  const [counterOfferData, setCounterOfferData] = useState({ devisId: null, counter_offer: '' });
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
@@ -79,6 +81,10 @@ const Devis = () => {
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleCounterOfferChange = (e) => {
+    setCounterOfferData({ ...counterOfferData, counter_offer: e.target.value });
   };
 
   const handleSubmit = async (e) => {
@@ -147,6 +153,38 @@ const Devis = () => {
     setIsModalOpen(true);
   };
 
+  const handleRejectWithCounterOffer = (devisId) => {
+    setCounterOfferData({ devisId, counter_offer: '' });
+    setIsCounterOfferModalOpen(true);
+  };
+
+  const handleCounterOfferSubmit = async (e) => {
+    e.preventDefault();
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      navigate('/login');
+      return;
+    }
+
+    try {
+      const response = await fetch(`http://localhost:8000/api/admin/devis/${counterOfferData.devisId}/reject-counter-offer/`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ counter_offer: counterOfferData.counter_offer }),
+      });
+      if (!response.ok) throw new Error('Erreur lors de la soumission de la contre-proposition');
+      fetchDevis();
+      setIsCounterOfferModalOpen(false);
+      toast.success('Contre-proposition envoyée avec succès !');
+    } catch (error) {
+      console.error('Erreur lors de la soumission de la contre-proposition:', error);
+      toast.error('Erreur lors de la soumission de la contre-proposition.');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
       {/* Navbar */}
@@ -190,6 +228,7 @@ const Devis = () => {
                 <th className="p-4 text-left">Description</th>
                 <th className="p-4 text-left">Montant (TND)</th>
                 <th className="p-4 text-left">Statut</th>
+                <th className="p-4 text-left">Contre-proposition</th>
                 <th className="p-4 text-left">Date</th>
                 <th className="p-4 text-left">Actions</th>
               </tr>
@@ -203,7 +242,7 @@ const Devis = () => {
                 </>
               ) : devis.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="p-4 text-center text-gray-500">
+                  <td colSpan="7" className="p-4 text-center text-gray-500">
                     Aucun devis disponible.
                   </td>
                 </tr>
@@ -222,6 +261,7 @@ const Devis = () => {
                     <td className="p-4">
                       {d.status === 'pending' ? 'En attente' : d.status === 'approved' ? 'Approuvé' : 'Rejeté'}
                     </td>
+                    <td className="p-4">{d.counter_offer || '-'}</td>
                     <td className="p-4">{new Date(d.created_at).toLocaleDateString()}</td>
                     <td className="p-4 flex space-x-2">
                       <motion.button
@@ -239,6 +279,14 @@ const Devis = () => {
                         className="text-red-500 hover:text-red-700"
                       >
                         <FaTrash />
+                      </motion.button>
+                      <motion.button
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={() => handleRejectWithCounterOffer(d.id)}
+                        className="text-yellow-500 hover:text-yellow-700"
+                      >
+                        Rejeter avec contre-proposition
                       </motion.button>
                     </td>
                   </motion.tr>
@@ -332,6 +380,53 @@ const Devis = () => {
                   className="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 transition"
                 >
                   {editId ? 'Modifier' : 'Ajouter'}
+                </motion.button>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal pour Contre-proposition */}
+      <AnimatePresence>
+        {isCounterOfferModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md shadow-lg"
+            >
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-semibold">Rejeter avec Contre-proposition</h3>
+                <button onClick={() => setIsCounterOfferModalOpen(false)} className="text-gray-500 hover:text-gray-700">
+                  <FaTimes />
+                </button>
+              </div>
+              <form onSubmit={handleCounterOfferSubmit}>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium mb-1">Contre-proposition</label>
+                  <textarea
+                    name="counter_offer"
+                    value={counterOfferData.counter_offer}
+                    onChange={handleCounterOfferChange}
+                    placeholder="Décrivez la contre-proposition"
+                    className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-indigo-500"
+                    required
+                  />
+                </div>
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  type="submit"
+                  className="w-full bg-yellow-600 text-white py-2 rounded-lg hover:bg-yellow-700 transition"
+                >
+                  Envoyer la Contre-proposition
                 </motion.button>
               </form>
             </motion.div>

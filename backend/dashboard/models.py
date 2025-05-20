@@ -76,16 +76,27 @@ class ProduitDetail(models.Model):
         return f"Détails pour Devis #{self.devis.id} - {self.type_site}"
 
 class Devis(models.Model):
+    STATUS_CHOICES = (
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    )
+
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='devis')
     description = models.TextField()
-    details = models.TextField(blank=True, null=True)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     created_at = models.DateTimeField(auto_now_add=True)
-    status = models.CharField(max_length=20, choices=[('pending', 'En attente'), ('approved', 'Approuvé'), ('rejected', 'Rejeté')], default='pending')
+    counter_offer = models.TextField(blank=True, null=True)  # Contre-proposition
+    counter_offer_status = models.CharField(
+        max_length=20,
+        choices=(('pending', 'Pending'), ('accepted', 'Accepted'), ('rejected', 'Rejected')),
+        blank=True,
+        null=True
+    )  # Statut de la contre-proposition
 
     def __str__(self):
-        return f"Devis pour {self.client.name} - {self.amount} USD"
-
+        return f"Devis #{self.id} pour {self.client.name}"
 class Facture(models.Model):
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='factures')
     devis = models.ForeignKey(Devis, on_delete=models.SET_NULL, null=True, blank=True, related_name='factures')

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { jwtDecode } from 'jwt-decode';
+import { toast } from 'react-toastify';
 
 const ClientDevisList = () => {
   const [devisList, setDevisList] = useState([]);
@@ -13,6 +14,12 @@ const ClientDevisList = () => {
     pending: 'En attente',
     approved: 'Approuvé',
     rejected: 'Rejeté',
+  };
+
+  const counterOfferStatusTranslation = {
+    pending: 'En attente',
+    accepted: 'Acceptée',
+    rejected: 'Rejetée',
   };
 
   useEffect(() => {
@@ -60,6 +67,36 @@ const ClientDevisList = () => {
     fetchDevis();
   }, [navigate]);
 
+  const handleCounterOfferResponse = async (devisId, action) => {
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      navigate('/login');
+      return;
+    }
+
+    try {
+      const response = await fetch(`http://localhost:8000/api/client/devis/${devisId}/counter-offer-response/`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ action }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Erreur lors de la réponse à la contre-proposition');
+      }
+      setDevisList((prev) =>
+        prev.map((devis) => (devis.id === devisId ? data : devis))
+      );
+      toast.success(`Contre-proposition ${action === 'accept' ? 'acceptée' : 'rejetée'} avec succès !`);
+    } catch (error) {
+      console.error('Erreur lors de la réponse à la contre-proposition:', error);
+      toast.error(error.message || 'Erreur lors de la réponse à la contre-proposition.');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center py-16">
       <div className="container mx-auto px-4">
@@ -95,8 +132,18 @@ const ClientDevisList = () => {
                       <p className="text-gray-600">
                         Créé le: {new Date(devis.created_at).toLocaleDateString('fr-FR')}
                       </p>
+                      {devis.counter_offer && (
+                        <>
+                          <p className="text-gray-600 font-semibold mt-2">
+                            Contre-proposition: {devis.counter_offer}
+                          </p>
+                          <p className="text-gray-600">
+                            Statut de la contre-proposition: {counterOfferStatusTranslation[devis.counter_offer_status] || devis.counter_offer_status}
+                          </p>
+                        </>
+                      )}
                     </div>
-                    <div>
+                    <div className="flex items-center space-x-2">
                       <span
                         className={`inline-block px-3 py-1 rounded-full text-sm font-semibold ${
                           devis.status === 'approved'
@@ -108,6 +155,22 @@ const ClientDevisList = () => {
                       >
                         {statusTranslation[devis.status] || devis.status}
                       </span>
+                      {devis.counter_offer && devis.counter_offer_status === 'pending' && (
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={() => handleCounterOfferResponse(devis.id, 'accept')}
+                            className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600"
+                          >
+                            Accepter
+                          </button>
+                          <button
+                            onClick={() => handleCounterOfferResponse(devis.id, 'reject')}
+                            className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600"
+                          >
+                            Refuser
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                   {devis.produit_details && devis.produit_details.length > 0 && (

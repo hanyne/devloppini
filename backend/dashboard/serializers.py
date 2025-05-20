@@ -73,20 +73,20 @@ class DevisSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Devis
-        fields = ['id', 'client', 'client_id', 'description', 'details', 'amount', 'created_at', 'status', 'produit_details']
-
-    def validate_amount(self, value):
-        if value is None:
-            raise serializers.ValidationError("Le montant est requis.")
-        if value <= 0:
-            raise serializers.ValidationError("Le montant doit être un nombre positif.")
-        return value
+        fields = [
+            'id', 'client', 'client_id', 'description', 'amount', 'status',
+            'created_at', 'produit_details', 'counter_offer', 'counter_offer_status'
+        ]
 
     def validate_description(self, value):
         if not value or not value.strip():
             raise serializers.ValidationError("La description ne peut pas être vide.")
         return value.strip()
 
+    def validate_amount(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Le montant doit être supérieur à 0.")
+        return value
 class FactureSerializer(serializers.ModelSerializer):
     client = ClientSerializer(read_only=True)
     devis = DevisSerializer(read_only=True)

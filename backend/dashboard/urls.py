@@ -1,7 +1,7 @@
 # urls.py
 from django.urls import path
 from .views import (
-    AdminTestimonialListView, AdminTestimonialUpdateView, CustomTokenObtainPairView, ClientLoginView, RegisterView, ServiceListView,
+    AdminDevisRejectWithCounterOfferView, AdminTestimonialListView, AdminTestimonialUpdateView, ClientCounterOfferResponseView, CustomTokenObtainPairView, ClientLoginView, RegisterView, ServiceListView,
     PublicDevisCreateView, HistoriqueListView, HistoriqueCreateView,
     ClientListCreateView, ClientDetailView, DevisListCreateView, DevisDetailView,
     FactureListCreateView, FactureDetailView, FactureOCRView, FacturePDFView,
@@ -40,4 +40,6 @@ urlpatterns = [
     path('chat/', ChatView.as_view(), name='chat'),
     path('admin/testimonials/', AdminTestimonialListView.as_view(), name='admin-testimonial-list'),
     path('admin/testimonials/<int:pk>/update/', AdminTestimonialUpdateView.as_view(), name='admin-testimonial-update'),
+    path('admin/devis/<int:pk>/reject-counter-offer/', AdminDevisRejectWithCounterOfferView.as_view(), name='admin-devis-reject-counter-offer'),
+    path('client/devis/<int:pk>/counter-offer-response/', ClientCounterOfferResponseView.as_view(), name='client-counter-offer-response'),
 ]
