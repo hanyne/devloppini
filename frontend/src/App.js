@@ -251,6 +251,7 @@ function App() {
                 </nav>
 
                 <Routes>
+                    <Route path="/" element={<Home />} />
                     <Route path="/home" element={<Home />} />
                     <Route path="/devis-form" element={<DevisForm />} />
                     <Route path="/client-devis" element={<ProtectedRoute allowedRole="client"><ClientDevisList /></ProtectedRoute>} />
@@ -264,7 +265,6 @@ function App() {
                     <Route path="/payment-devis" element={<ProtectedRoute allowedRole="client"><PaymentDevis /></ProtectedRoute>} />
                     <Route path="/payment/success/:factureId" element={<ProtectedRoute allowedRole="client"><PaymentSuccess /></ProtectedRoute>} />
                     <Route path="/api/payment/paypal/execute/" element={<PayPalExecuteHandler />} />
-                    <Route path="/" element={<Navigate to={isAuthenticated ? (userRole === 'admin' ? '/dashboard' : '/home') : '/login'} />} />
                     <Route path="/chat" element={<ProtectedRoute allowedRole="client"><Chat /></ProtectedRoute>} />
                 </Routes>
             </div>

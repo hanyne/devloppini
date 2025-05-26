@@ -87,6 +87,17 @@ class DevisSerializer(serializers.ModelSerializer):
         if value <= 0:
             raise serializers.ValidationError("Le montant doit être supérieur à 0.")
         return value
+
+    def validate_counter_offer(self, value):
+        if value and not value.strip():
+            raise serializers.ValidationError("La contre-proposition ne peut pas être vide si fournie.")
+        return value.strip() if value else value
+
+    def validate(self, data):
+        # Ensure counter_offer_status is valid if counter_offer is provided
+        if data.get('counter_offer') and not data.get('counter_offer_status'):
+            data['counter_offer_status'] = 'pending'
+        return data
 class FactureSerializer(serializers.ModelSerializer):
     client = ClientSerializer(read_only=True)
     devis = DevisSerializer(read_only=True)

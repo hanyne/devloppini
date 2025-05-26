@@ -1075,49 +1075,136 @@ class ClientCounterOfferResponseView(APIView):
 
     def put(self, request, pk):
         try:
+            # Retrieve the devis
             devis = Devis.objects.get(pk=pk)
-            # Vérifier que l'utilisateur est le client associé au devis
-            if not devis.client.user:
+            
+            # Verify user role from token
+            token = request.headers.get('Authorization', '').split('Bearer ')[1]
+            decoded_token = jwt.decode(token, options={"verify_signature": False})
+            role = decoded_token.get('role')
+            client_id = decoded_token.get('client_id')
+
+            if role != 'client':
+                logger.warning(f"Non-client role ({role}) attempted to respond to counter-offer for devis #{pk}")
                 return Response(
-                    {"error": "Ce client n'est pas associé à un utilisateur."},
+                    {"error": "Seuls les clients peuvent répondre à une contre-proposition."},
                     status=status.HTTP_403_FORBIDDEN
                 )
-            if devis.client.user != request.user:
+
+            if not client_id or devis.client.id != client_id:
+                logger.warning(f"Client ID mismatch or missing for devis #{pk}. Token client_id: {client_id}, Devis client_id: {devis.client.id}")
                 return Response(
                     {"error": "Vous n'êtes pas autorisé à répondre à cette contre-proposition."},
                     status=status.HTTP_403_FORBIDDEN
                 )
-            # Vérifier qu'il y a une contre-proposition en attente
+
+            # Verify there is a pending counter-offer
             if not devis.counter_offer or devis.counter_offer_status != 'pending':
+                logger.warning(f"No pending counter-offer for devis #{pk}")
                 return Response(
                     {"error": "Aucune contre-proposition en attente pour ce devis."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            action = request.data.get('action')  # 'accept' ou 'reject'
+            # Get action from request
+            action = request.data.get('action')
             if action not in ['accept', 'reject']:
+                logger.warning(f"Invalid action '{action}' for devis #{pk}")
                 return Response(
                     {"error": "Action invalide. Utilisez 'accept' ou 'reject'."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
+            # Process counter-offer response
             devis.counter_offer_status = 'accepted' if action == 'accept' else 'rejected'
             if action == 'accept':
-                devis.status = 'approved'  # Approuver le devis si la contre-proposition est acceptée
+                devis.status = 'approved'
+                # Extract new amount from counter_offer if present (assuming format like "New amount: 500 TND")
+                amount_match = re.search(r'(\d+(?:\.\d{1,2})?)\s*TND', devis.counter_offer)
+                if amount_match:
+                    new_amount = float(amount_match.group(1))
+                    devis.amount = new_amount
+                    logger.info(f"Updated devis #{pk} amount to {new_amount} TND based on counter-offer")
+
+                # Create facture upon acceptance
+                invoice_number = f"F{devis.id:04d}-{uuid.uuid4().hex[:3].upper()}"
+                facture = Facture.objects.create(
+                    client=devis.client,
+                    devis=devis,
+                    invoice_number=invoice_number,
+                    amount=devis.amount,
+                    status='unpaid'
+                )
+                LigneFacture.objects.create(
+                    facture=facture,
+                    designation=devis.description,
+                    prix_unitaire=devis.amount,
+                    quantite=1,
+                    total=devis.amount
+                )
+                logger.info(f"Facture #{facture.invoice_number} created for devis #{devis.id}")
+
             devis.save()
 
-            # Ajouter une entrée dans l'historique
+            # Log action in history
             Historique.objects.create(
                 client=devis.client,
                 action=f"Contre-proposition pour devis #{devis.id} {'acceptée' if action == 'accept' else 'rejetée'}"
             )
-            logger.info(f"Contre-proposition pour devis #{devis.id} {devis.counter_offer_status} par client")
+            logger.info(f"Contre-proposition pour devis #{devis.id} {devis.counter_offer_status} par client ID {client_id}")
+
+            # Send SMS notification
+            self.send_sms_notification(devis, action, facture if action == 'accept' else None)
 
             serializer = DevisSerializer(devis)
             return Response(serializer.data, status=status.HTTP_200_OK)
+
         except Devis.DoesNotExist:
             logger.error(f"Devis non trouvé: {pk}")
             return Response({"error": "Devis non trouvé."}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
-            logger.error(f"Erreur dans ClientCounterOfferResponseView: {str(e)}")
+            logger.error(f"Erreur dans ClientCounterOfferResponseView: {str(e)}", exc_info=True)
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def send_sms_notification(self, devis, action, facture=None):
+        """Send SMS notification to client using Twilio."""
+        try:
+            if not all([settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN, settings.TWILIO_PHONE_NUMBER]):
+                logger.error(f"Twilio configuration incomplete for devis #{devis.id}")
+                return
+
+            if not re.match(r'^\+\d{10,15}$', settings.TWILIO_PHONE_NUMBER):
+                logger.error(f"Invalid TWILIO_PHONE_NUMBER {settings.TWILIO_PHONE_NUMBER} for devis #{devis.id}")
+                return
+
+            client = TwilioClient(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+            phone = devis.client.phone.strip()
+            if not re.match(r'^\+\d{10,15}$', phone):
+                if re.match(r'^[2579]\d{7}$', phone):
+                    phone = f"+216{phone}"
+                    logger.info(f"Normalized phone number to {phone} for devis #{devis.id}")
+                else:
+                    logger.error(f"Invalid phone number {phone} for devis #{devis.id}")
+                    return
+
+            if action == 'accept' and facture:
+                message_body = (
+                    f"Bonjour {devis.client.name}, vous avez accepté la contre-proposition pour le devis #{devis.id}. "
+                    f"Consultez votre facture #{facture.invoice_number} de {facture.amount} TND. Payez pour démarrer."
+                )
+            else:
+                message_body = (
+                    f"Bonjour {devis.client.name}, vous avez rejeté la contre-proposition pour le devis #{devis.id}. "
+                    f"Contactez-nous pour plus d'informations."
+                )
+
+            message = client.messages.create(
+                body=message_body,
+                from_=settings.TWILIO_PHONE_NUMBER,
+                to=phone
+            )
+            logger.info(f"SMS sent to {phone} for devis #{devis.id}: {message.sid}")
+        except TwilioRestException as e:
+            logger.error(f"Twilio error sending SMS for devis #{devis.id}: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error sending SMS for devis #{devis.id}: {str(e)}")

@@ -9,7 +9,6 @@ const ClientDevisList = () => {
   const [errorMessage, setErrorMessage] = useState(null);
   const navigate = useNavigate();
 
-  // Map English status to French
   const statusTranslation = {
     pending: 'En attente',
     approved: 'Approuvé',
@@ -22,48 +21,48 @@ const ClientDevisList = () => {
     rejected: 'Rejetée',
   };
 
-  useEffect(() => {
-    const fetchDevis = async () => {
-      setLoading(true);
-      setErrorMessage(null);
-      try {
-        const token = localStorage.getItem('access_token');
-        if (!token) {
-          setErrorMessage('Vous devez être connecté pour voir vos devis.');
-          navigate('/login');
-          return;
-        }
-
-        const decodedToken = jwtDecode(token);
-        if (!decodedToken.client_id) {
-          setErrorMessage('Session invalide : client_id manquant. Veuillez vous reconnecter.');
-          navigate('/login');
-          return;
-        }
-
-        const response = await fetch('http://localhost:8000/api/devis/', {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          setDevisList(data);
-        } else {
-          const errorData = await response.json();
-          setErrorMessage(errorData.error || 'Erreur lors de la récupération des devis.');
-        }
-      } catch (error) {
-        console.error('Erreur réseau:', error);
-        setErrorMessage('Erreur réseau ou serveur indisponible.');
-      } finally {
-        setLoading(false);
+  const fetchDevis = async () => {
+    setLoading(true);
+    setErrorMessage(null);
+    try {
+      const token = localStorage.getItem('access_token');
+      if (!token) {
+        setErrorMessage('Vous devez être connecté pour voir vos devis.');
+        navigate('/login');
+        return;
       }
-    };
 
+      const decodedToken = jwtDecode(token);
+      if (decodedToken.role !== 'client' || !decodedToken.client_id) {
+        setErrorMessage('Session invalide : rôle ou client_id manquant. Veuillez vous reconnecter.');
+        navigate('/login');
+        return;
+      }
+
+      const response = await fetch('http://localhost:8000/api/devis/', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erreur lors de la récupération des devis.');
+      }
+
+      const data = await response.json();
+      setDevisList(data);
+    } catch (error) {
+      console.error('Erreur réseau:', error);
+      setErrorMessage(error.message || 'Erreur réseau ou serveur indisponible.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchDevis();
   }, [navigate]);
 
@@ -83,14 +82,19 @@ const ClientDevisList = () => {
         },
         body: JSON.stringify({ action }),
       });
-      const data = await response.json();
+
       if (!response.ok) {
-        throw new Error(data.error || 'Erreur lors de la réponse à la contre-proposition');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erreur lors de la réponse à la contre-proposition');
       }
+
+      const data = await response.json();
       setDevisList((prev) =>
         prev.map((devis) => (devis.id === devisId ? data : devis))
       );
       toast.success(`Contre-proposition ${action === 'accept' ? 'acceptée' : 'rejetée'} avec succès !`);
+      // Refresh devis list to ensure facture creation is reflected
+      fetchDevis();
     } catch (error) {
       console.error('Erreur lors de la réponse à la contre-proposition:', error);
       toast.error(error.message || 'Erreur lors de la réponse à la contre-proposition.');
