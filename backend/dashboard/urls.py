@@ -1,7 +1,7 @@
 # urls.py
 from django.urls import path
 from .views import (
-    AdminDevisRejectWithCounterOfferView, AdminTestimonialListView, AdminTestimonialUpdateView, ClientCounterOfferResponseView, CustomTokenObtainPairView, ClientLoginView, RegisterView, ServiceListView,
+    AdminDevisRejectWithCounterOfferView, AdminTestimonialListView, AdminTestimonialUpdateView, ChangePasswordView, ClientCounterOfferResponseView, ClientProfileView, CustomTokenObtainPairView, ClientLoginView, DevisSpecificationPDFView, FactureSendEmailView, PasswordResetConfirmView, PasswordResetRequestView, RegisterView, ServiceListView,
     PublicDevisCreateView, HistoriqueListView, HistoriqueCreateView,
     ClientListCreateView, ClientDetailView, DevisListCreateView, DevisDetailView,
     FactureListCreateView, FactureDetailView, FactureOCRView, FacturePDFView,
@@ -29,6 +29,7 @@ urlpatterns = [
     path('factures/<int:pk>/', FactureDetailView.as_view(), name='facture-detail'),
     path('facture/ocr/', FactureOCRView.as_view(), name='facture-ocr'),
     path('facture/<int:pk>/pdf/', FacturePDFView.as_view(), name='facture-pdf'),
+    path('factures/<int:pk>/send-email/', FactureSendEmailView.as_view(), name='facture-send-email'),
     path('payment/<int:facture_id>/intent/', PaymentIntentView.as_view(), name='payment-intent'),
     path('payment/<int:payment_id>/confirm/', PaymentConfirmView.as_view(), name='payment-confirm'),
     path('devis/list/', DevisListView.as_view(), name='devis-list'),
@@ -42,4 +43,9 @@ urlpatterns = [
     path('admin/testimonials/<int:pk>/update/', AdminTestimonialUpdateView.as_view(), name='admin-testimonial-update'),
     path('admin/devis/<int:pk>/reject-counter-offer/', AdminDevisRejectWithCounterOfferView.as_view(), name='admin-devis-reject-counter-offer'),
     path('client/devis/<int:pk>/counter-offer-response/', ClientCounterOfferResponseView.as_view(), name='client-counter-offer-response'),
+    path('devis/<int:pk>/specification-pdf/', DevisSpecificationPDFView.as_view(), name='devis-specification-pdf'),  # Fixed path
+    path('client/profile/', ClientProfileView.as_view(), name='client-profile'),
+    path('password-reset/', PasswordResetRequestView.as_view(), name='password-reset'),
+    path('password-reset-confirm/', PasswordResetConfirmView.as_view(), name='password-reset-confirm'),
+    path('change-password/', ChangePasswordView.as_view(), name='change-password'),
 ]

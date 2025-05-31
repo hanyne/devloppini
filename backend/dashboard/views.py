@@ -1,7 +1,13 @@
 import uuid
 import jwt
 import logging
+from django.core.mail import EmailMessage
+from django.core.mail import send_mail
 import re
+from io import BytesIO
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.utils.encoding import force_bytes, force_str
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
 import requests
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
@@ -703,7 +709,7 @@ class DevisUpdateView(APIView):
             if status == 'approved':
                 facture_exists = Facture.objects.filter(devis=devis).exists()
                 if not facture_exists:
-                    invoice_number = f"F{devis.id:04d}-{uhkan.uuid4().hex[:3].upper()}"
+                    invoice_number = f"F{devis.id:04d}-{uuid.uuid4().hex[:3].upper()}"
                     facture = Facture.objects.create(
                         client=devis.client,
                         devis=devis,
@@ -735,7 +741,6 @@ class DevisUpdateView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def send_sms_notification(self, facture):
-        """Send SMS notification to client using Twilio."""
         try:
             if not all([settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN, settings.TWILIO_PHONE_NUMBER]):
                 logger.error(f"Twilio configuration incomplete for facture #{facture.invoice_number}")
@@ -752,7 +757,7 @@ class DevisUpdateView(APIView):
                     phone = f"+216{phone}"
                     logger.info(f"Normalized phone number to {phone} for facture #{facture.invoice_number}")
                 else:
-                    logger.error(f"Invalid phone number {phone} for facture #{ facture.invoice_number}")
+                    logger.error(f"Invalid phone number {phone} for facture #{facture.invoice_number}")
                     return
             message_body = (
                 f"Bonjour {facture.client.name}, Société Devloppini vous informe : votre devis #{facture.devis.id if facture.devis else 'N/A'} "
@@ -1041,6 +1046,8 @@ class AdminDevisRejectWithCounterOfferView(APIView):
         try:
             devis = Devis.objects.get(pk=pk)
             counter_offer = request.data.get('counter_offer')
+            specification_file = request.FILES.get('specification_pdf')
+
             if not counter_offer:
                 return Response(
                     {"error": "La contre-proposition est requise."},
@@ -1050,9 +1057,54 @@ class AdminDevisRejectWithCounterOfferView(APIView):
             devis.status = 'rejected'
             devis.counter_offer = counter_offer
             devis.counter_offer_status = 'pending'
+
+            # Handle PDF: Use uploaded file or generate a default one
+            if specification_file:
+                # Validate file type
+                if not specification_file.name.lower().endswith('.pdf'):
+                    logger.error(f"Invalid file type uploaded for devis #{pk}: {specification_file.name}")
+                    return Response(
+                        {"error": "Le fichier doit être un PDF."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                devis.specification_pdf = specification_file
+                logger.info(f"Uploaded PDF saved for devis #{pk}: {specification_file.name}")
+            else:
+                # Generate default PDF
+                buffer = BytesIO()
+                c = canvas.Canvas(buffer, pagesize=letter)
+                width, height = letter
+
+                c.setFont("Helvetica-Bold", 14)
+                c.drawString(50, height - 40, "Cahier des Charges")
+                c.setFont("Helvetica", 12)
+                c.drawString(50, height - 70, f"Devis #{devis.id}")
+                c.drawString(50, height - 90, f"Client: {devis.client.name}")
+                c.drawString(50, height - 110, f"Description: {devis.description}")
+                c.drawString(50, height - 130, f"Contre-proposition: {counter_offer}")
+
+                if devis.produit_details.exists():
+                    c.drawString(50, height - 160, "Détails du Produit:")
+                    y = height - 180
+                    for detail in devis.produit_details.all():
+                        c.drawString(50, y, f"Type: {detail.type_site}")
+                        c.drawString(50, y - 20, f"Fonctionnalités: {detail.fonctionnalites or 'Aucune'}")
+                        c.drawString(50, y - 40, f"Design personnalisé: {'Oui' if detail.design_personnalise else 'Non'}")
+                        c.drawString(50, y - 60, f"SEO: {'Oui' if detail.integration_seo else 'Non'}")
+                        y -= 80
+
+                c.showPage()
+                c.save()
+                buffer.seek(0)
+                filename = f"devis_{devis.id}_spec.pdf"
+                # Save to default storage
+                saved_path = default_storage.save(f"specifications/{filename}", ContentFile(buffer.getvalue()))
+                devis.specification_pdf.name = saved_path
+                buffer.close()
+                logger.info(f"Default PDF generated and saved for devis #{pk}: {saved_path}")
+
             devis.save()
 
-            # Ajouter une entrée dans l'historique
             Historique.objects.create(
                 client=devis.client,
                 action=f"Devis #{devis.id} rejeté avec contre-proposition"
@@ -1065,9 +1117,8 @@ class AdminDevisRejectWithCounterOfferView(APIView):
             logger.error(f"Devis non trouvé: {pk}")
             return Response({"error": "Devis non trouvé."}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
-            logger.error(f"Erreur dans AdminDevisRejectWithCounterOfferView: {str(e)}")
+            logger.error(f"Erreur dans AdminDevisRejectWithCounterOfferView: {str(e)}", exc_info=True)
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
 logger = logging.getLogger(__name__)
 
 class ClientCounterOfferResponseView(APIView):
@@ -1075,10 +1126,8 @@ class ClientCounterOfferResponseView(APIView):
 
     def put(self, request, pk):
         try:
-            # Retrieve the devis
             devis = Devis.objects.get(pk=pk)
             
-            # Verify user role from token
             token = request.headers.get('Authorization', '').split('Bearer ')[1]
             decoded_token = jwt.decode(token, options={"verify_signature": False})
             role = decoded_token.get('role')
@@ -1098,7 +1147,6 @@ class ClientCounterOfferResponseView(APIView):
                     status=status.HTTP_403_FORBIDDEN
                 )
 
-            # Verify there is a pending counter-offer
             if not devis.counter_offer or devis.counter_offer_status != 'pending':
                 logger.warning(f"No pending counter-offer for devis #{pk}")
                 return Response(
@@ -1106,54 +1154,65 @@ class ClientCounterOfferResponseView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Get action from request
             action = request.data.get('action')
-            if action not in ['accept', 'reject']:
+            modified_counter_offer = request.data.get('modified_counter_offer')
+
+            if action not in ['accept', 'reject', 'modify']:
                 logger.warning(f"Invalid action '{action}' for devis #{pk}")
                 return Response(
-                    {"error": "Action invalide. Utilisez 'accept' ou 'reject'."},
+                    {"error": "Action invalide. Utilisez 'accept', 'reject' ou 'modify'."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Process counter-offer response
-            devis.counter_offer_status = 'accepted' if action == 'accept' else 'rejected'
-            if action == 'accept':
-                devis.status = 'approved'
-                # Extract new amount from counter_offer if present (assuming format like "New amount: 500 TND")
-                amount_match = re.search(r'(\d+(?:\.\d{1,2})?)\s*TND', devis.counter_offer)
-                if amount_match:
-                    new_amount = float(amount_match.group(1))
-                    devis.amount = new_amount
-                    logger.info(f"Updated devis #{pk} amount to {new_amount} TND based on counter-offer")
+            if action == 'modify' and not modified_counter_offer:
+                logger.warning(f"Missing modified counter-offer for devis #{pk}")
+                return Response(
+                    {"error": "Une contre-proposition modifiée est requise pour l'action 'modify'."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
-                # Create facture upon acceptance
-                invoice_number = f"F{devis.id:04d}-{uuid.uuid4().hex[:3].upper()}"
-                facture = Facture.objects.create(
+            if action == 'modify':
+                devis.counter_offer = modified_counter_offer
+                devis.counter_offer_status = 'pending'
+                Historique.objects.create(
                     client=devis.client,
-                    devis=devis,
-                    invoice_number=invoice_number,
-                    amount=devis.amount,
-                    status='unpaid'
+                    action=f"Devis #{devis.id}: Nouvelle contre-proposition soumise par le client"
                 )
-                LigneFacture.objects.create(
-                    facture=facture,
-                    designation=devis.description,
-                    prix_unitaire=devis.amount,
-                    quantite=1,
-                    total=devis.amount
-                )
-                logger.info(f"Facture #{facture.invoice_number} created for devis #{devis.id}")
+            else:
+                devis.counter_offer_status = 'accepted' if action == 'accept' else 'rejected'
+                if action == 'accept':
+                    devis.status = 'approved'
+                    amount_match = re.search(r'(\d+(?:\.\d{1,2})?)\s*TND', devis.counter_offer)
+                    if amount_match:
+                        new_amount = float(amount_match.group(1))
+                        devis.amount = new_amount
+                        logger.info(f"Updated devis #{pk} amount to {new_amount} TND based on counter-offer")
+
+                    invoice_number = f"F{devis.id:04d}-{uuid.uuid4().hex[:3].upper()}"
+                    facture = Facture.objects.create(
+                        client=devis.client,
+                        devis=devis,
+                        invoice_number=invoice_number,
+                        amount=devis.amount,
+                        status='unpaid'
+                    )
+                    LigneFacture.objects.create(
+                        facture=facture,
+                        designation=devis.description,
+                        prix_unitaire=devis.amount,
+                        quantite=1,
+                        total=devis.amount
+                    )
+                    logger.info(f"Facture #{facture.invoice_number} created for devis #{devis.id}")
 
             devis.save()
 
-            # Log action in history
             Historique.objects.create(
                 client=devis.client,
-                action=f"Contre-proposition pour devis #{devis.id} {'acceptée' if action == 'accept' else 'rejetée'}"
+                action=f"Contre-proposition pour devis #{devis.id} {'acceptée' if action == 'accept' else 'rejetée' if action == 'reject' else 'modifiée'}"
             )
-            logger.info(f"Contre-proposition pour devis #{devis.id} {devis.counter_offer_status} par client ID {client_id}")
+            logger.info(f"Contre-proposition pour devis #{devis.id} {devis.counter_offer_status if action != 'modify' else 'modified'} par client_id {client_id}")
 
-            # Send SMS notification
             self.send_sms_notification(devis, action, facture if action == 'accept' else None)
 
             serializer = DevisSerializer(devis)
@@ -1167,7 +1226,6 @@ class ClientCounterOfferResponseView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def send_sms_notification(self, devis, action, facture=None):
-        """Send SMS notification to client using Twilio."""
         try:
             if not all([settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN, settings.TWILIO_PHONE_NUMBER]):
                 logger.error(f"Twilio configuration incomplete for devis #{devis.id}")
@@ -1189,12 +1247,17 @@ class ClientCounterOfferResponseView(APIView):
 
             if action == 'accept' and facture:
                 message_body = (
-                    f"Bonjour {devis.client.name}, vous avez accepté la contre-proposition pour le devis #{devis.id}. "
-                    f"Consultez votre facture #{facture.invoice_number} de {facture.amount} TND. Payez pour démarrer."
+                    f"Vous avez accepté la contre-proposition pour le devis #{devis.id}. "
+                    f"Consultez votre facture #{facture.invoice_number} de {facture.amount} TND."
+                )
+            elif action == 'modify':
+                message_body = (
+                    f"Vous avez soumis une modification à la contre-proposition pour le devis #{devis.id}. "
+                    f"En attente de réponse de l'admin."
                 )
             else:
                 message_body = (
-                    f"Bonjour {devis.client.name}, vous avez rejeté la contre-proposition pour le devis #{devis.id}. "
+                    f"Vous avez rejeté la contre-proposition pour le devis #{devis.id}. "
                     f"Contactez-nous pour plus d'informations."
                 )
 
@@ -1208,3 +1271,466 @@ class ClientCounterOfferResponseView(APIView):
             logger.error(f"Twilio error sending SMS for devis #{devis.id}: {str(e)}")
         except Exception as e:
             logger.error(f"Error sending SMS for devis #{devis.id}: {str(e)}")
+
+# views.py (only the relevant DevisSpecificationPDFView part)
+logger = logging.getLogger(__name__)
+
+class DevisSpecificationPDFView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        try:
+            # Retrieve the devis
+            devis = Devis.objects.get(pk=pk)
+            
+            # Extract and validate token
+            auth_header = request.headers.get('Authorization', '')
+            if not auth_header.startswith('Bearer '):
+                logger.error(f"Missing or malformed authentication token for devis {pk}, IP: {request.META.get('REMOTE_ADDR')}")
+                return Response(
+                    {"error": "Token d'authentification manquant ou mal formé."},
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+            token = auth_header.split('Bearer ')[1]
+            
+            # Decode token with signature verification
+            try:
+                decoded_token = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+            except jwt.ExpiredSignatureError:
+                logger.error(f"Expired token for devis {pk}, IP: {request.META.get('REMOTE_ADDR')}")
+                return Response(
+                    {"error": "Token expiré. Veuillez vous reconnecter."},
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+            except jwt.InvalidTokenError:
+                logger.error(f"Invalid token for devis {pk}, IP: {request.META.get('REMOTE_ADDR')}")
+                return Response(
+                    {"error": "Token invalide."},
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+
+            role = decoded_token.get('role')
+            client_id = decoded_token.get('client_id')
+
+            # Check permissions
+            if role == 'client' and (not client_id or devis.client.id != int(client_id)):
+                logger.warning(
+                    f"Unauthorized access to devis {pk} by client_id {client_id}, "
+                    f"Devis client_id: {devis.client.id}, IP: {request.META.get('REMOTE_ADDR')}"
+                )
+                return Response(
+                    {"error": "Accès non autorisé au PDF."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            elif role not in ['admin', 'client']:
+                logger.warning(
+                    f"Unauthorized role ({role}) attempting to access devis {pk} PDF, "
+                    f"IP: {request.META.get('REMOTE_ADDR')}"
+                )
+                return Response(
+                    {"error": "Rôle non autorisé."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            # Check if PDF exists
+            if not devis.specification_pdf:
+                logger.warning(f"No PDF associated with devis {pk}, IP: {request.META.get('REMOTE_ADDR')}")
+                return Response(
+                    {"error": "Aucun PDF de spécifications disponible pour ce devis."},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            # Verify file existence in storage using the model's method
+            if not devis.has_pdf():
+                logger.error(
+                    f"PDF file not found at {devis.specification_pdf.name} for devis {pk}, "
+                    f"IP: {request.META.get('REMOTE_ADDR')}"
+                )
+                return Response(
+                    {"error": "Fichier PDF introuvable sur le serveur."},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            # Log access in history
+            Historique.objects.create(
+                client=devis.client,
+                action=f"Consultation du PDF de spécifications du devis #{devis.id}"
+            )
+            logger.info(
+                f"Devis {pk} PDF accessed by {role} (client_id: {client_id or 'admin'}), "
+                f"File: {devis.specification_pdf.name}, IP: {request.META.get('REMOTE_ADDR')}"
+            )
+
+            # Stream the file
+            file = default_storage.open(devis.specification_pdf.name, 'rb')
+            response = FileResponse(
+                file,
+                content_type='application/pdf'
+            )
+            filename = os.path.basename(devis.specification_pdf.name).replace(' ', '_')
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            return response
+
+        except Devis.DoesNotExist:
+            logger.error(
+                f"Devis not found: {pk}, IP: {request.META.get('REMOTE_ADDR')}"
+            )
+            return Response(
+                {"error": "Devis non trouvé."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(
+                f"Error in DevisSpecificationPDFView for devis {pk}: {str(e)}, "
+                f"IP: {request.META.get('REMOTE_ADDR')}",
+                exc_info=True
+            )
+            return Response(
+                {"error": f"Erreur serveur: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+class ClientProfileView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            token = request.headers.get('Authorization', '').split('Bearer ')[1]
+            decoded_token = jwt.decode(token, options={"verify_signature": False})
+            client_id = decoded_token.get('client_id')
+
+            if not client_id:
+                logger.error("client_id missing in token")
+                return Response({"error": "Client non authentifié."}, status=status.HTTP_401_UNAUTHORIZED)
+
+            client = Client.objects.get(id=client_id)
+            serializer = ClientSerializer(client)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Client.DoesNotExist:
+            logger.error(f"Client not found for client_id: {client_id}")
+            return Response({"error": "Client non trouvé."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"Error in ClientProfileView: {str(e)}")
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# Custom token generator for Client
+logger = logging.getLogger(__name__)
+
+# Custom token generator for Client
+class ClientPasswordResetTokenGenerator(PasswordResetTokenGenerator):
+    def _make_hash_value(self, user, timestamp):
+        return (
+            str(user.pk) + str(timestamp) + str(user.is_active)
+        )
+
+password_reset_token = ClientPasswordResetTokenGenerator()
+
+class PasswordResetRequestView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        email = request.data.get('email')
+        if not email:
+            logger.error("Password reset requested without email")
+            return Response(
+                {"error": "L'email est requis."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            client = Client.objects.get(email__iexact=email)
+            if not client.is_active:
+                logger.warning(f"Password reset requested for inactive client: {email}")
+                return Response(
+                    {"error": "Ce compte est désactivé."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Generate token and UID
+            uid = urlsafe_base64_encode(force_bytes(client.pk))
+            token = password_reset_token.make_token(client)
+            reset_url = f"{settings.FRONTEND_URL}/reset-password/{uid}/{token}/"
+
+            # Send email
+            subject = "Réinitialisation de votre mot de passe"
+            message = (
+                f"Bonjour {client.name},\n\n"
+                f"Vous avez demandé à réinitialiser votre mot de passe. "
+                f"Cliquez sur le lien suivant pour définir un nouveau mot de passe :\n\n"
+                f"{reset_url}\n\n"
+                f"Ce lien est valide pendant 24 heures. Si vous n'avez pas demandé cette réinitialisation, ignorez cet email.\n\n"
+                f"Cordialement,\nL'équipe de votre application"
+            )
+            send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [client.email], fail_silently=False)
+            logger.info(f"Password reset email sent to {email}")
+
+            return Response(
+                {"message": "Un lien de réinitialisation a été envoyé à votre email."},
+                status=status.HTTP_200_OK
+            )
+
+        except Client.DoesNotExist:
+            logger.warning(f"Password reset requested for non-existent email: {email}")
+            return Response(
+                {"message": "Si un compte existe avec cet email, un lien de réinitialisation vous a été envoyé."},
+                status=status.HTTP_200_OK
+            )
+        except Exception as e:
+            logger.error(f"Error in PasswordResetRequestView: {str(e)}", exc_info=True)
+            return Response(
+                {"error": "Une erreur est survenue. Veuillez réessayer."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+class PasswordResetConfirmView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        uidb64 = request.data.get('uid')
+        token = request.data.get('token')
+        new_password = request.data.get('new_password')
+
+        if not all([uidb64, token, new_password]):
+            logger.error("Password reset confirmation missing required fields")
+            return Response(
+                {"error": "Tous les champs sont requis."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            uid = force_str(urlsafe_base64_decode(uidb64))
+            client = Client.objects.get(pk=uid)
+
+            if not password_reset_token.check_token(client, token):
+                logger.warning(f"Invalid or expired password reset token for client {client.email}")
+                return Response(
+                    {"error": "Lien de réinitialisation invalide ou expiré."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            client.set_password(new_password)
+            client.save()
+
+            # Sync password with User if exists
+            try:
+                user = User.objects.get(email=client.email)
+                user.set_password(new_password)
+                user.save()
+                logger.info(f"Synced password for User {user.email}")
+            except User.DoesNotExist:
+                logger.info(f"No User found for client {client.email}, no sync needed")
+
+            logger.info(f"Password reset successfully for client {client.email}")
+
+            return Response(
+                {"message": "Mot de passe réinitialisé avec succès. Vous pouvez maintenant vous connecter."},
+                status=status.HTTP_200_OK
+            )
+
+        except (TypeError, ValueError, OverflowError, Client.DoesNotExist):
+            logger.warning(f"Invalid UID or client not found: {uidb64}")
+            return Response(
+                {"error": "Lien de réinitialisation invalide."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            logger.error(f"Error in PasswordResetConfirmView: {str(e)}", exc_info=True)
+            return Response(
+                {"error": "Une erreur est survenue. Veuillez réessayer."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+class ChangePasswordView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        current_password = request.data.get('current_password')
+        new_password = request.data.get('new_password')
+        confirm_password = request.data.get('confirm_password')
+
+        if not all([current_password, new_password, confirm_password]):
+            logger.error("Missing required fields in change password request")
+            return Response(
+                {"error": "Tous les champs sont requis."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if new_password != confirm_password:
+            logger.error("New password and confirm password do not match")
+            return Response(
+                {"error": "Les nouveaux mots de passe ne correspondent pas."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # Get the authenticated user
+            user = request.user
+            # Verify current password
+            if not user.check_password(current_password):
+                logger.warning(f"Invalid current password for user {user.email}")
+                return Response(
+                    {"error": "Mot de passe actuel incorrect."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Update User password
+            user.set_password(new_password)
+            user.save()
+
+            # Sync with Client model
+            try:
+                client = Client.objects.get(email__iexact=user.email)
+                client.set_password(new_password)
+                client.save()
+                logger.info(f"Password changed and synced for client {client.email}")
+            except Client.DoesNotExist:
+                logger.info(f"No Client found for user {user.email}, only User password updated")
+
+            logger.info(f"Password changed successfully for user {user.email}")
+
+            return Response(
+                {"message": "Mot de passe changé avec succès."},
+                status=status.HTTP_200_OK
+            )
+
+        except Exception as e:
+            logger.error(f"Error in ChangePasswordView: {str(e)}", exc_info=True)
+            return Response(
+                {"error": "Une erreur est survenue. Veuillez réessayer."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+class FactureSendEmailView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def post(self, request, pk):
+        try:
+            # Retrieve the facture
+            facture = Facture.objects.get(pk=pk)
+            if facture.status != 'paid':
+                logger.warning(f"Attempt to send email for non-paid facture {facture.invoice_number}")
+                return Response(
+                    {"error": "Seules les factures payées peuvent être envoyées par email."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Verify client email
+            client = facture.client
+            if not client.email:
+                logger.error(f"No email found for client {client.name}")
+                return Response(
+                    {"error": "Aucune adresse email trouvée pour ce client."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Generate PDF in memory (reused from FacturePDFView)
+            buffer = BytesIO()
+            c = canvas.Canvas(buffer, pagesize=letter)
+            width, height = letter
+
+            c.setFont("Helvetica-Bold", 14)
+            c.setFillColor(colors.red)
+            c.drawString(50, height - 40, "Ste Bonjour")
+            c.setFont("Helvetica", 10)
+            c.setFillColor(colors.black)
+            c.drawString(50, height - 55, "Rue Salem Alaykom, Ariana Tunisie")
+            c.drawString(50, height - 70, "Matricule Fiscale: XXXXXXXXXXXX")
+            c.drawString(400, height - 40, "Tél: +216 XX XXX XXX")
+            c.drawString(400, height - 55, "e-mail: Bonjour@gmail.com")
+            c.drawString(400, height - 70, "Site: www.aaaaa.com")
+
+            c.setFont("Helvetica", 10)
+            c.drawString(50, height - 100, f"Date: {facture.created_at.strftime('%d/%m/%Y')}")
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(50, height - 115, f"Facture: {facture.invoice_number}")
+
+            c.setFont("Helvetica", 10)
+            c.drawString(400, height - 100, f"{facture.client.name}")
+            c.drawString(400, height - 115, "Rue N°1, Ariana")
+            c.drawString(400, height - 130, "Matricule Fiscale: XXXXXXXXXXXX")
+
+            data = [["Désignation", "Prix unitaire", "Quantité", "Total"]]
+            lignes = facture.lignes.all()
+            if lignes.exists():
+                for ligne in lignes:
+                    data.append([
+                        ligne.designation,
+                        f"{ligne.prix_unitaire:,.2f} TND",
+                        str(ligne.quantite),
+                        f"{ligne.total:,.2f} TND"
+                    ])
+
+            table = Table(data, colWidths=[200, 100, 80, 100])
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+                ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 10),
+                ('GRID', (0, 0), (-1, 0), 1, colors.black),
+                ('GRID', (0, -1), (-1, -1), 1, colors.black),
+            ]))
+
+            table_start_y = height - 180
+            table_width, table_height = table.wrap(width - 100, table_start_y)
+            table.drawOn(c, 50, table_start_y - table_height)
+
+            y_position = table_start_y - table_height - 20
+            total_ht = float(facture.amount)
+            tva_rate = 0.13
+            tva = total_ht * tva_rate
+            timbre = 0.60
+            total_ttc = total_ht + tva + timbre
+
+            c.setFont("Helvetica", 10)
+            c.drawRightString(width - 50, y_position, f"Total HT: {total_ht:,.2f} TND")
+            c.drawRightString(width - 50, y_position - 15, f"TVA 13%: {tva:,.2f} TND")
+            c.drawRightString(width - 50, y_position - 30, f"Timbre: {timbre:.2f} TND")
+            c.setFont("Helvetica-Bold", 12)
+            c.drawRightString(width - 50, y_position - 50, f"Total TTC: {total_ttc:,.2f} TND")
+
+            c.showPage()
+            c.save()
+            buffer.seek(0)
+
+            # Create and send email
+            subject = f"Votre facture {facture.invoice_number} - Ste Bonjour"
+            message = (
+                f"Bonjour {client.name},\n\n"
+                f"Veuillez trouver ci-joint votre facture {facture.invoice_number} pour un montant de {facture.amount} TND.\n"
+                f"Merci pour votre paiement.\n\n"
+                f"Cordialement,\nL'équipe Ste Bonjour"
+            )
+            email = EmailMessage(
+                subject,
+                message,
+                settings.DEFAULT_FROM_EMAIL,
+                [client.email],
+            )
+            email.attach(f"facture_{facture.invoice_number}.pdf", buffer.getvalue(), 'application/pdf')
+            email.send()
+
+            logger.info(f"Email sent for facture {facture.invoice_number} to {client.email}")
+            buffer.close()
+
+            return Response(
+                {"message": "Email envoyé avec succès."},
+                status=status.HTTP_200_OK
+            )
+
+        except Facture.DoesNotExist:
+            logger.error(f"Facture not found: {pk}")
+            return Response(
+                {"error": "Facture non trouvée."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(f"Error sending email for facture {pk}: {str(e)}")
+            return Response(
+                {"error": f"Erreur lors de l'envoi de l'email: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+

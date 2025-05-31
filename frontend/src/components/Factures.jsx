@@ -1,9 +1,10 @@
+// src/components/Factures.jsx
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FaEdit, FaTrash, FaFilePdf, FaPlus, FaTimes, FaUpload } from 'react-icons/fa';
+import { FaEdit, FaTrash, FaFilePdf, FaPlus, FaTimes, FaUpload, FaFilter } from 'react-icons/fa';
 
 const SkeletonRow = () => (
   <tr className="animate-pulse">
@@ -32,6 +33,9 @@ const Factures = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isOCRModalOpen, setIsOCRModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  // Add filter states
+  const [statusFilter, setStatusFilter] = useState('');
+  const [clientNameFilter, setClientNameFilter] = useState('');
   const navigate = useNavigate();
 
   // Fetch data on mount
@@ -106,53 +110,54 @@ const Factures = () => {
     setError(null);
   };
 
- const handleSubmit = async (e) => {
-  e.preventDefault();
-  const token = localStorage.getItem('access_token');
-  if (!token) {
-    setError('Vous devez être connecté.');
-    navigate('/login');
-    return;
-  }
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      setError('Vous devez être connecté.');
+      navigate('/login');
+      return;
+    }
 
-  const data = {
-    client_id: formData.client_id,
-    devis_id: formData.devis_id || null, // Handle nullable devis_id
-    invoice_number: formData.invoice_number,
-    amount: parseFloat(formData.amount) || 0,
-    status: formData.status,
+    const data = {
+      client_id: formData.client_id,
+      devis_id: formData.devis_id || null,
+      invoice_number: formData.invoice_number,
+      amount: parseFloat(formData.amount) || 0,
+      status: formData.status,
+    };
+
+    try {
+      const url = editId
+        ? `http://localhost:8000/api/factures/${editId}/`
+        : 'http://localhost:8000/api/factures/';
+      const method = editId ? 'put' : 'post';
+
+      await axios({
+        method,
+        url,
+        data,
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      setSuccess(editId ? 'Facture modifiée.' : 'Facture créée.');
+      setFormData({ client_id: '', devis_id: '', invoice_number: '', amount: '', status: 'unpaid' });
+      setEditId(null);
+      setIsModalOpen(false);
+      fetchFactures(token);
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (error) {
+      const message = error.response?.data?.error || 'Erreur lors de la soumission.';
+      setError(message);
+      if (error.response?.status === 401) {
+        navigate('/login');
+      } else if (error.response?.status === 400) {
+        console.error('Validation errors:', error.response.data);
+        setError(JSON.stringify(error.response.data));
+      }
+    }
   };
 
-  try {
-    const url = editId
-      ? `http://localhost:8000/api/factures/${editId}/`
-      : 'http://localhost:8000/api/factures/';
-    const method = editId ? 'put' : 'post';
-
-    await axios({
-      method,
-      url,
-      data,
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    setSuccess(editId ? 'Facture modifiée.' : 'Facture créée.');
-    setFormData({ client_id: '', devis_id: '', invoice_number: '', amount: '', status: 'unpaid' });
-    setEditId(null);
-    setIsModalOpen(false);
-    fetchFactures(token);
-    setTimeout(() => setSuccess(null), 3000);
-  } catch (error) {
-    const message = error.response?.data?.error || 'Erreur lors de la soumission.';
-    setError(message);
-    if (error.response?.status === 401) {
-      navigate('/login');
-    } else if (error.response?.status === 400) {
-      console.error('Validation errors:', error.response.data);
-      setError(JSON.stringify(error.response.data));
-    }
-  }
-};
   const handleOCRSubmit = async (e) => {
     e.preventDefault();
     const token = localStorage.getItem('access_token');
@@ -183,44 +188,45 @@ const Factures = () => {
   };
 
   const handleDelete = async (id) => {
-  const token = localStorage.getItem('access_token');
-  if (!token) {
-    setError('Vous devez être connecté.');
-    navigate('/login');
-    return;
-  }
-  if (!window.confirm('Confirmer la suppression de la facture ?')) return;
-
-  try {
-    await axios.delete(`http://localhost:8000/api/factures/${id}/`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    setSuccess('Facture supprimée avec succès.');
-    fetchFactures(token); // Refetch to update UI
-    setTimeout(() => setSuccess(null), 3000);
-  } catch (error) {
-    const message = error.response?.data?.error || 'Erreur lors de la suppression.';
-    setError(message);
-    if (error.response?.status === 401) {
-      localStorage.removeItem('access_token');
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      setError('Vous devez être connecté.');
       navigate('/login');
-    } else if (error.response?.status === 404) {
-      setError('Facture non trouvée.');
+      return;
     }
-    console.error('Delete error:', error);
-  }
-};
+    if (!window.confirm('Confirmer la suppression de la facture ?')) return;
+
+    try {
+      await axios.delete(`http://localhost:8000/api/factures/${id}/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setSuccess('Facture supprimée avec succès.');
+      fetchFactures(token);
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (error) {
+      const message = error.response?.data?.error || 'Erreur lors de la suppression.';
+      setError(message);
+      if (error.response?.status === 401) {
+        localStorage.removeItem('access_token');
+        navigate('/login');
+      } else if (error.response?.status === 404) {
+        setError('Facture non trouvée.');
+      }
+      console.error('Delete error:', error);
+    }
+  };
+
   const handleEdit = (facture) => {
-  setFormData({
-    client_id: facture.client?.id?.toString() || '',
-    devis_id: facture.devis?.id?.toString() || '',
-    invoice_number: facture.invoice_number || '',
-    amount: facture.amount?.toString() || '',
-    status: facture.status || 'unpaid',
-  });
-  setEditId(facture.id);
-  setIsModalOpen(true);
-};
+    setFormData({
+      client_id: facture.client?.id?.toString() || '',
+      devis_id: facture.devis?.id?.toString() || '',
+      invoice_number: facture.invoice_number || '',
+      amount: facture.amount?.toString() || '',
+      status: facture.status || 'unpaid',
+    });
+    setEditId(facture.id);
+    setIsModalOpen(true);
+  };
 
   const handleDownloadPDF = async (id) => {
     const token = localStorage.getItem('access_token');
@@ -248,6 +254,19 @@ const Factures = () => {
     }
   };
 
+  const handleClearFilters = () => {
+    setStatusFilter('');
+    setClientNameFilter('');
+  };
+
+  // Apply frontend filters
+  const filteredFactures = factures.filter((facture) => {
+    const matchesStatus = !statusFilter || facture.status === statusFilter;
+    const matchesClientName = !clientNameFilter || 
+      (facture.client?.name?.toLowerCase().includes(clientNameFilter.toLowerCase()) || false);
+    return matchesStatus && matchesClientName;
+  });
+
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
       <nav className="bg-gray-800 p-4 shadow">
@@ -263,6 +282,46 @@ const Factures = () => {
       </nav>
 
       <div className="container mx-auto p-6">
+        {/* Filter Controls */}
+        <div className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Filtrer par statut
+              </label>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="p-2 border rounded dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="">Tous</option>
+                <option value="unpaid">Impayée</option>
+                <option value="paid">Payée</option>
+                <option value="overdue">En retard</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Rechercher par nom du client
+              </label>
+              <input
+                type="text"
+                value={clientNameFilter}
+                onChange={(e) => setClientNameFilter(e.target.value)}
+                placeholder="Nom du client..."
+                className="p-2 border rounded dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+          </div>
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            onClick={handleClearFilters}
+            className="flex items-center bg-gray-500 text-white px-4 py-2 rounded-lg"
+          >
+            <FaFilter className="mr-2" /> Réinitialiser
+          </motion.button>
+        </div>
+
         <div className="mb-6 flex justify-end space-x-4">
           <motion.button
             whileHover={{ scale: 1.05 }}
@@ -304,6 +363,9 @@ const Factures = () => {
         )}
 
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+          <div className="p-4 text-gray-600 dark:text-gray-300">
+            {filteredFactures.length} facture{filteredFactures.length !== 1 ? 's' : ''} affichée{filteredFactures.length !== 1 ? 's' : ''}
+          </div>
           <table className="w-full">
             <thead className="bg-gray-200 dark:bg-gray-700">
               <tr>
@@ -319,14 +381,14 @@ const Factures = () => {
             <tbody>
               {loading ? (
                 Array(3).fill().map((_, i) => <SkeletonRow key={i} />)
-              ) : factures.length === 0 ? (
+              ) : filteredFactures.length === 0 ? (
                 <tr>
                   <td colSpan="7" className="p-4 text-center text-gray-500">
-                    Aucune facture.
+                    Aucune facture correspondante.
                   </td>
                 </tr>
               ) : (
-                factures.map((f) => (
+                filteredFactures.map((f) => (
                   <motion.tr
                     key={f.id}
                     initial={{ opacity: 0 }}

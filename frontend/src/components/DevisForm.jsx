@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+// DevisForm.jsx
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { jwtDecode } from 'jwt-decode';
 
 const DevisForm = () => {
   const [formData, setFormData] = useState({
@@ -19,6 +19,41 @@ const DevisForm = () => {
   const [successMessage, setSuccessMessage] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
   const navigate = useNavigate();
+
+  // Fetch client data on mount
+  useEffect(() => {
+    const token = localStorage.getItem('access_token');
+    if (token) {
+      const fetchClientData = async () => {
+        try {
+          const response = await fetch('http://localhost:8000/api/client/profile/', {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+          });
+          const data = await response.json();
+          if (response.ok) {
+            setFormData((prevData) => ({
+              ...prevData,
+              name: data.name || '',
+              email: data.email || '',
+              phone: data.phone || '',
+            }));
+          } else {
+            console.warn('Erreur lors de la récupération des données client:', data.error);
+            setErrorMessage('Impossible de pré-remplir les informations personnelles.');
+          }
+        } catch (error) {
+          console.error('Erreur réseau:', error);
+          setErrorMessage('Erreur réseau lors de la récupération des informations personnelles.');
+        }
+      };
+      fetchClientData();
+    } else {
+      console.warn('Aucun token trouvé. Les champs personnels doivent être remplis manuellement.');
+    }
+  }, []);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -63,25 +98,6 @@ const DevisForm = () => {
         return;
       }
 
-      console.log('Soumission de la demande de devis:', submissionData);
-      console.log('Token envoyé:', token);
-      let decodedToken;
-      try {
-        decodedToken = jwtDecode(token);
-        console.log('Token décodé:', decodedToken);
-        if (!decodedToken.client_id) {
-          console.error('client_id manquant dans le token:', decodedToken);
-          setErrorMessage('Session invalide : client_id manquant. Veuillez vous reconnecter.');
-          navigate('/login');
-          return;
-        }
-      } catch (error) {
-        console.error('Erreur lors du décodage du token:', error);
-        setErrorMessage('Token invalide. Veuillez vous reconnecter.');
-        navigate('/login');
-        return;
-      }
-
       const response = await fetch('http://localhost:8000/api/public/devis/create/', {
         method: 'POST',
         headers: {
@@ -90,16 +106,12 @@ const DevisForm = () => {
         },
         body: JSON.stringify(submissionData),
       });
-      console.log('Statut de la réponse:', response.status);
       const data = await response.json();
-      console.log('Réponse complète du serveur:', data);
 
       if (response.ok) {
         setSuccessMessage('Demande de devis soumise avec succès ! Nous vous contacterons bientôt.');
         setFormData({
-          name: '',
-          email: '',
-          phone: '',
+          ...formData,
           project_type: '',
           budget: '',
           timeline: '',
@@ -115,7 +127,6 @@ const DevisForm = () => {
           errorMsg += ' Détails : ' + JSON.stringify(data.details);
         }
         setErrorMessage(errorMsg);
-        console.error('Erreurs de validation:', data.details || data);
       }
     } catch (error) {
       console.error('Erreur réseau:', error);
@@ -135,33 +146,42 @@ const DevisForm = () => {
               <label className="block text-gray-700 font-semibold mb-2">Votre nom</label>
               <input
                 type="text"
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all duration-300 hover:border-indigo-400"
+                className={`w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all duration-300 hover:border-indigo-400 ${
+                  formData.name ? 'bg-gray-100 cursor-not-allowed' : ''
+                }`}
                 name="name"
                 value={formData.name}
                 onChange={handleChange}
                 placeholder="Entrez votre nom"
+                readOnly={!!formData.name}
               />
             </div>
             <div>
               <label className="block text-gray-700 font-semibold mb-2">Votre email</label>
               <input
                 type="email"
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all duration-300 hover:border-indigo-400"
+                className={`w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all duration-300 hover:border-indigo-400 ${
+                  formData.email ? 'bg-gray-100 cursor-not-allowed' : ''
+                }`}
                 name="email"
                 value={formData.email}
                 onChange={handleChange}
                 placeholder="Entrez votre email"
+                readOnly={!!formData.email}
               />
             </div>
             <div>
               <label className="block text-gray-700 font-semibold mb-2">Votre téléphone</label>
               <input
                 type="text"
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all duration-300 hover:border-indigo-400"
+                className={`w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all duration-300 hover:border-indigo-400 ${
+                  formData.phone ? 'bg-gray-100 cursor-not-allowed' : ''
+                }`}
                 name="phone"
                 value={formData.phone}
                 onChange={handleChange}
                 placeholder="Entrez votre numéro de téléphone"
+                readOnly={!!formData.phone}
               />
             </div>
             <div>

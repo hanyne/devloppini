@@ -3,20 +3,23 @@ from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .models import Client, Devis, Facture, Historique, LigneFacture, Payment, ProduitDetail, Service, UserProfile, Testimonial
 
+# serializers.py
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
     def get_token(cls, user):
         token = super().get_token(user)
-        if user.is_superuser:
-            token['role'] = 'admin'
-        else:
-            try:
-                profile = UserProfile.objects.get(user=user)
-                token['role'] = profile.role
-            except UserProfile.DoesNotExist:
-                token['role'] = 'client'
+        try:
+            profile = UserProfile.objects.get(user=user)
+            token['role'] = profile.role
+            if profile.role == 'client':
+                client = Client.objects.get(user=user)
+                token['client_id'] = client.id
+                token['name'] = client.name
+                token['email'] = client.email
+                token['phone'] = client.phone
+        except (UserProfile.DoesNotExist, Client.DoesNotExist):
+            token['role'] = 'client' if not user.is_superuser else 'admin'
         return token
-
 
 class ServiceSerializer(serializers.ModelSerializer):
     class Meta:
@@ -33,6 +36,7 @@ class ClientSerializer(serializers.ModelSerializer):
         if not re.match(r'^\+\d{10,15}$', value):
             raise serializers.ValidationError("Le numéro de téléphone doit être au format E.164 (ex: +21612345678).")
         return value
+
 class HistoriqueSerializer(serializers.ModelSerializer):
     client = serializers.PrimaryKeyRelatedField(queryset=Client.objects.all())
 
@@ -56,11 +60,11 @@ class LigneFactureSerializer(serializers.ModelSerializer):
         model = LigneFacture
         fields = ['id', 'designation', 'prix_unitaire', 'quantite', 'total']
 
-# serializers.py
 class PaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Payment
-        fields = ['id', 'facture', 'stripe_payment_intent_id', 'amount', 'currency', 'status', 'risk_level', 'created_at', 'metadata']
+        fields = ['id', 'facture', 'paypal_order_id', 'amount', 'currency', 'status', 'risk_level', 'created_at', 'metadata']
+
     def validate_currency(self, value):
         if value != 'USD':
             raise serializers.ValidationError("La devise doit être USD.")
@@ -70,12 +74,14 @@ class DevisSerializer(serializers.ModelSerializer):
     client = ClientSerializer(read_only=True)
     client_id = serializers.PrimaryKeyRelatedField(queryset=Client.objects.all(), source='client', write_only=True)
     produit_details = ProduitDetailSerializer(many=True, read_only=True)
+    specification_pdf = serializers.FileField(required=False, allow_null=True)
 
     class Meta:
         model = Devis
         fields = [
             'id', 'client', 'client_id', 'description', 'amount', 'status',
-            'created_at', 'produit_details', 'counter_offer', 'counter_offer_status'
+            'created_at', 'produit_details', 'counter_offer', 'counter_offer_status',
+            'specification_pdf'
         ]
 
     def validate_description(self, value):
@@ -94,10 +100,10 @@ class DevisSerializer(serializers.ModelSerializer):
         return value.strip() if value else value
 
     def validate(self, data):
-        # Ensure counter_offer_status is valid if counter_offer is provided
         if data.get('counter_offer') and not data.get('counter_offer_status'):
             data['counter_offer_status'] = 'pending'
         return data
+
 class FactureSerializer(serializers.ModelSerializer):
     client = ClientSerializer(read_only=True)
     devis = DevisSerializer(read_only=True)
@@ -138,6 +144,7 @@ class FactureSerializer(serializers.ModelSerializer):
         for ligne_data in lignes_data:
             LigneFacture.objects.create(facture=instance, **ligne_data)
         return instance
+
 class TestimonialSerializer(serializers.ModelSerializer):
     client = ClientSerializer(read_only=True)
     client_id = serializers.PrimaryKeyRelatedField(queryset=Client.objects.all(), source='client', write_only=True)

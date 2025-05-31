@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FaEnvelope, FaCommentDots, FaLaptopCode, FaCloud, FaMobileAlt, FaLock, FaStar } from 'react-icons/fa';
-import {jwtDecode} from 'jwt-decode';
+import { jwtDecode } from 'jwt-decode';
 
 // Default images
 const defaultAboutImage = "https://www.actian.com/wp-content/uploads/2023/11/data-management-aspects-for-your-it-team.jpg";
@@ -14,6 +14,14 @@ const carouselImages = [
   { url: "https://img.freepik.com/photos-gratuite/concept-collage-html-css-personne_23-2150062008.jpg?t=st=1745445487~exp=1745449087~hmac=6846c6d5c0010bfc19e29927823e85d3d8d9e95fb0bf5171c9ef294bdc404e57&w=1380", caption: "Transformez vos idées en réalité" },
   { url: "https://img.freepik.com/photos-gratuite/bouchent-concept-entreprise-mains_23-2149151165.jpg?t=st=1745445524~exp=1745449124~hmac=de96c7495b21cd45d7b2e8a38b350507a0023711b3da582ab74e1a651d93111a&w=1380", caption: "Solutions digitales modernes" },
   { url: "https://img.freepik.com/photos-gratuite/personne-travaillant-html-ordinateur_23-2150038841.jpg?t=st=1745445568~exp=1745449168~hmac=6aa6d931a1475f4850ca71d22a6c9a0297c5296ce7acadaf5e61e6087cb53d38&w=1380", caption: "Votre partenaire technologique" },
+];
+
+// Example project images (real website screenshots from free stock photo sites)
+const projectImages = [
+  { url: "https://www.codeur.com/blog/wp-content/uploads/2018/01/template-magento-gratuit-1.jpg", title: "Site E-commerce", description: "Exemple de boutique en ligne" },
+  { url: "https://gecdesigns.com/_next/image?url=https%3A%2F%2Fasset.gecdesigns.com%2Fimg%2Fwebsite-templates%2Fyara-personal-portfolio-website-template-230220-1610386449830-cover.webp&w=1440&q=75", title: "Portfolio Artistique", description: "Exemple de portfolio créatif" },
+  { url: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT3np09rp0PcKrruEr_1WHYhihC5_0c8O1n5g&s", title: "Site d’Entreprise", description: "Exemple de site corporatif" },
+  { url: "https://blog-fr.orson.io/wp-content/uploads/2024/07/ecomm-design-1024x476.png", title: "Blog Technologique", description: "Exemple de blog moderne" },
 ];
 
 const Home = () => {
@@ -367,8 +375,45 @@ const Home = () => {
         </div>
       </section>
 
-      {/* Testimonial Section */}
+      {/* Projets Réalisés Section */}
       <section className="py-20 bg-white dark:bg-gray-800">
+        <div className="container mx-auto px-4">
+          <motion.h2
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6 }}
+            viewport={{ once: true }}
+            className="text-4xl md:text-5xl font-bold text-center text-gray-800 dark:text-gray-100 mb-12"
+          >
+            Projets Réalisés
+          </motion.h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {projectImages.map((project, index) => (
+              <motion.div
+                key={index}
+                initial={{ opacity: 0, y: 50 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: index * 0.1 }}
+                viewport={{ once: true }}
+                className="relative rounded-xl shadow-lg overflow-hidden hover:shadow-2xl transition-all duration-300"
+              >
+                <img
+                  src={project.url}
+                  alt={project.title}
+                  className="w-full h-48 object-cover"
+                />
+                <div className="p-4 bg-white dark:bg-gray-700">
+                  <h3 className="text-lg font-semibold text-indigo-800 dark:text-indigo-300">{project.title}</h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">{project.description}</p>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Testimonial Section */}
+      <section className="py-20 bg-gray-100 dark:bg-gray-700">
         <div className="container mx-auto px-4">
           <motion.h2
             initial={{ opacity: 0, y: 20 }}

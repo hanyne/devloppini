@@ -5,7 +5,6 @@ import { toast } from 'react-toastify';
 import { motion } from 'framer-motion';
 import { FaEnvelope, FaLock, FaSignInAlt } from 'react-icons/fa'; 
 
-
 const Login = ({ setIsAuthenticated, setUserRole }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -117,6 +116,15 @@ const Login = ({ setIsAuthenticated, setUserRole }) => {
                 required
               />
             </div>
+          </div>
+
+          <div className="mb-4 text-right">
+            <Link
+              to="/forgot-password"
+              className="text-sm text-indigo-500 hover:underline dark:text-indigo-400"
+            >
+              Mot de passe oublié ?
+            </Link>
           </div>
 
           <motion.button

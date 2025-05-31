@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FaEdit, FaTrash, FaHistory, FaPlus, FaTimes } from 'react-icons/fa';
+import { FaEdit, FaTrash, FaHistory, FaPlus, FaTimes, FaSearch } from 'react-icons/fa';
 
 // Fonction pour Skeleton Loading
 const SkeletonRow = () => (
@@ -20,6 +20,8 @@ const SkeletonRow = () => (
 
 const Clients = () => {
   const [clients, setClients] = useState([]);
+  const [filteredClients, setFilteredClients] = useState([]); // State for filtered clients
+  const [searchQuery, setSearchQuery] = useState(''); // State for search query
   const [formData, setFormData] = useState({ name: '', email: '', phone: '' });
   const [editId, setEditId] = useState(null);
   const [selectedClientId, setSelectedClientId] = useState(null);
@@ -31,6 +33,16 @@ const Clients = () => {
   useEffect(() => {
     fetchClients();
   }, []);
+
+  useEffect(() => {
+    // Filter clients based on search query
+    const filtered = clients.filter(client =>
+      client.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      client.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      client.phone.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+    setFilteredClients(filtered);
+  }, [searchQuery, clients]);
 
   const fetchClients = async () => {
     const token = localStorage.getItem('access_token');
@@ -47,6 +59,7 @@ const Clients = () => {
       if (!response.ok) throw new Error('Erreur réseau');
       const data = await response.json();
       setClients(data);
+      setFilteredClients(data); // Initialize filtered clients
     } catch (error) {
       console.error('Erreur lors du chargement des clients:', error);
       toast.error('Erreur lors du chargement des clients.');
@@ -165,6 +178,10 @@ const Clients = () => {
     fetchHistorique(clientId);
   };
 
+  const handleSearch = (e) => {
+    setSearchQuery(e.target.value);
+  };
+
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
       {/* Navbar */}
@@ -182,8 +199,18 @@ const Clients = () => {
 
       {/* Contenu Principal */}
       <div className="container mx-auto p-6">
-        {/* Bouton pour Ajouter un Client */}
-        <div className="mb-6 flex justify-end">
+        {/* Bouton pour Ajouter un Client et Recherche */}
+        <div className="mb-6 flex justify-between items-center">
+          <div className="relative w-1/3">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={handleSearch}
+              placeholder="Rechercher par nom, email ou téléphone..."
+              className="w-full p-2 pl-10 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-indigo-500"
+            />
+            <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-300" />
+          </div>
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
@@ -217,14 +244,14 @@ const Clients = () => {
                   <SkeletonRow />
                   <SkeletonRow />
                 </>
-              ) : clients.length === 0 ? (
+              ) : filteredClients.length === 0 ? (
                 <tr>
                   <td colSpan="4" className="p-4 text-center text-gray-500">
-                    Aucun client disponible.
+                    Aucun client trouvé.
                   </td>
                 </tr>
               ) : (
-                clients.map((client) => (
+                filteredClients.map((client) => (
                   <motion.tr
                     key={client.id}
                     initial={{ opacity: 0 }}
@@ -289,7 +316,7 @@ const Clients = () => {
                       animate={{ opacity: 1 }}
                       className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg"
                     >
-                      {entry.action} - {new Date(entry.date).toLocaleString()}
+                      {entry.action} - {new Date(entry.date).toLocaleString('fr-FR', { hour12: false })}
                     </motion.li>
                   ))}
                 </ul>

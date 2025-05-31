@@ -15,7 +15,7 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [darkMode, setDarkMode] = useState(false);
-  const [filter, setFilter] = useState('all');
+  const [filter, setFilter] = useState('month'); // Default to monthly view
 
   useEffect(() => {
     const fetchData = async () => {
@@ -32,7 +32,7 @@ const Dashboard = () => {
           fetch('http://localhost:8000/api/clients/', { headers }),
           fetch('http://localhost:8000/api/devis/', { headers }),
           fetch('http://localhost:8000/api/factures/', { headers }),
-          fetch('http://localhost:8000/api/admin/testimonials/', { headers }), // Nouvelle requête pour les avis
+          fetch('http://localhost:8000/api/admin/testimonials/', { headers }),
         ]);
 
         if (!clientsResponse.ok) throw new Error('Erreur lors du chargement des clients');
@@ -62,7 +62,7 @@ const Dashboard = () => {
     fetchData();
   }, []);
 
-  // Fonction pour approuver ou désapprouver un avis
+  // Toggle approval for testimonials
   const handleToggleApproval = async (testimonialId, isApproved) => {
     const token = localStorage.getItem('access_token');
     try {
@@ -94,51 +94,59 @@ const Dashboard = () => {
   const unpaidFacturesCount = factures.filter(f => f.status === 'unpaid').length;
   const totalPaidAmount = factures
     .filter(f => f.status === 'paid')
-    .reduce((sum, f) => sum + parseFloat(f.amount), 0)
+    .reduce((sum, f) => sum + parseFloat(f.amount || 0), 0)
     .toFixed(2);
 
-  // Chart Data
-  const factureStatusData = {
-    labels: ['Payées', 'Impayées', 'En retard'],
-    datasets: [{
-      label: 'Factures',
-      data: [
-        factures.filter(f => f.status === 'paid').length,
-        factures.filter(f => f.status === 'unpaid').length,
-        factures.filter(f => f.status === 'overdue').length,
-      ],
-      backgroundColor: ['#10b981', '#f59e0b', '#ef4444'],
-    }],
-  };
+  // Dynamic revenue data by time period
+  const revenueData = () => {
+    const now = new Date();
+    const labels = [];
+    const data = [];
 
-  const devisStatusData = {
-    labels: ['En attente', 'Approuvés', 'Rejetés'],
-    datasets: [{
-      data: [
-        devis.filter(d => d.status === 'pending').length,
-        devis.filter(d => d.status === 'approved').length,
-        devis.filter(d => d.status === 'rejected').length,
-      ],
-      backgroundColor: ['#3b82f6', '#22c55e', '#ef4444'],
-    }],
-  };
-
-  const monthlyRevenueData = () => {
-    const months = Array.from({ length: 12 }, (_, i) => {
-      const date = new Date(2025, i, 1);
-      return date.toLocaleString('fr-FR', { month: 'short' });
-    });
-    const data = months.map((_, i) => {
-      return factures
-        .filter(f => {
-          const date = new Date(f.created_at);
-          return date.getFullYear() === 2025 && date.getMonth() === i && f.status === 'paid';
-        })
-        .reduce((sum, f) => sum + parseFloat(f.amount), 0);
-    });
+    if (filter === 'day') {
+      for (let i = 6; i >= 0; i--) {
+        const date = new Date(now);
+        date.setDate(now.getDate() - i);
+        labels.push(date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }));
+        data.push(
+          factures
+            .filter(f => {
+              const fDate = new Date(f.created_at);
+              return fDate.toDateString() === date.toDateString() && f.status === 'paid';
+            })
+            .reduce((sum, f) => sum + parseFloat(f.amount || 0), 0)
+        );
+      }
+    } else if (filter === 'month') {
+      for (let i = 0; i < 12; i++) {
+        const date = new Date(2025, i, 1);
+        labels.push(date.toLocaleString('fr-FR', { month: 'short' }));
+        data.push(
+          factures
+            .filter(f => {
+              const fDate = new Date(f.created_at);
+              return fDate.getFullYear() === 2025 && fDate.getMonth() === i && f.status === 'paid';
+            })
+            .reduce((sum, f) => sum + parseFloat(f.amount || 0), 0)
+        );
+      }
+    } else if (filter === 'year') {
+      for (let i = 4; i >= 0; i--) {
+        const year = now.getFullYear() - i;
+        labels.push(year.toString());
+        data.push(
+          factures
+            .filter(f => {
+              const fDate = new Date(f.created_at);
+              return fDate.getFullYear() === year && f.status === 'paid';
+            })
+            .reduce((sum, f) => sum + parseFloat(f.amount || 0), 0)
+        );
+      }
+    }
 
     return {
-      labels: months,
+      labels,
       datasets: [{
         label: 'Revenus (TND)',
         data,
@@ -150,7 +158,121 @@ const Dashboard = () => {
     };
   };
 
-  // Recent Activities
+  // Dynamic facture status data by time period
+  const factureStatusData = () => {
+    const now = new Date();
+    const labels = [];
+    const paidData = [];
+    const unpaidData = [];
+    const overdueData = [];
+
+    if (filter === 'day') {
+      for (let i = 6; i >= 0; i--) {
+        const date = new Date(now);
+        date.setDate(now.getDate() - i);
+        labels.push(date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }));
+        const filtered = factures.filter(f => {
+          const fDate = new Date(f.created_at);
+          return fDate.toDateString() === date.toDateString();
+        });
+        paidData.push(filtered.filter(f => f.status === 'paid').length);
+        unpaidData.push(filtered.filter(f => f.status === 'unpaid').length);
+        overdueData.push(filtered.filter(f => f.status === 'overdue').length);
+      }
+    } else if (filter === 'month') {
+      for (let i = 0; i < 12; i++) {
+        const date = new Date(2025, i, 1);
+        labels.push(date.toLocaleString('fr-FR', { month: 'short' }));
+        const filtered = factures.filter(f => {
+          const fDate = new Date(f.created_at);
+          return fDate.getFullYear() === 2025 && fDate.getMonth() === i;
+        });
+        paidData.push(filtered.filter(f => f.status === 'paid').length);
+        unpaidData.push(filtered.filter(f => f.status === 'unpaid').length);
+        overdueData.push(filtered.filter(f => f.status === 'overdue').length);
+      }
+    } else if (filter === 'year') {
+      for (let i = 4; i >= 0; i--) {
+        const year = now.getFullYear() - i;
+        labels.push(year.toString());
+        const filtered = factures.filter(f => {
+          const fDate = new Date(f.created_at);
+          return fDate.getFullYear() === year;
+        });
+        paidData.push(filtered.filter(f => f.status === 'paid').length);
+        unpaidData.push(filtered.filter(f => f.status === 'unpaid').length);
+        overdueData.push(filtered.filter(f => f.status === 'overdue').length);
+      }
+    }
+
+    return {
+      labels,
+      datasets: [
+        { label: 'Payées', data: paidData, backgroundColor: '#10b981' },
+        { label: 'Impayées', data: unpaidData, backgroundColor: '#f59e0b' },
+        { label: 'En retard', data: overdueData, backgroundColor: '#ef4444' },
+      ],
+    };
+  };
+
+  // Dynamic devis status data by time period
+  const devisStatusData = () => {
+    const now = new Date();
+    const labels = [];
+    const pendingData = [];
+    const approvedData = [];
+    const rejectedData = [];
+
+    if (filter === 'day') {
+      for (let i = 6; i >= 0; i--) {
+        const date = new Date(now);
+        date.setDate(now.getDate() - i);
+        labels.push(date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }));
+        const filtered = devis.filter(d => {
+          const dDate = new Date(d.created_at);
+          return dDate.toDateString() === date.toDateString();
+        });
+        pendingData.push(filtered.filter(d => d.status === 'pending').length);
+        approvedData.push(filtered.filter(d => d.status === 'approved').length);
+        rejectedData.push(filtered.filter(d => d.status === 'rejected').length);
+      }
+    } else if (filter === 'month') {
+      for (let i = 0; i < 12; i++) {
+        const date = new Date(2025, i, 1);
+        labels.push(date.toLocaleString('fr-FR', { month: 'short' }));
+        const filtered = devis.filter(d => {
+          const dDate = new Date(d.created_at);
+          return dDate.getFullYear() === 2025 && dDate.getMonth() === i;
+        });
+        pendingData.push(filtered.filter(d => d.status === 'pending').length);
+        approvedData.push(filtered.filter(d => d.status === 'approved').length);
+        rejectedData.push(filtered.filter(d => d.status === 'rejected').length);
+      }
+    } else if (filter === 'year') {
+      for (let i = 4; i >= 0; i--) {
+        const year = now.getFullYear() - i;
+        labels.push(year.toString());
+        const filtered = devis.filter(d => {
+          const dDate = new Date(d.created_at);
+          return dDate.getFullYear() === year;
+        });
+        pendingData.push(filtered.filter(d => d.status === 'pending').length);
+        approvedData.push(filtered.filter(d => d.status === 'approved').length);
+        rejectedData.push(filtered.filter(d => d.status === 'rejected').length);
+      }
+    }
+
+    return {
+      labels,
+      datasets: [
+        { label: 'En attente', data: pendingData, backgroundColor: '#3b82f6' },
+        { label: 'Approuvés', data: approvedData, backgroundColor: '#22c55e' },
+        { label: 'Rejetés', data: rejectedData, backgroundColor: '#ef4444' },
+      ],
+    };
+  };
+
+  // Recent Activities (unchanged)
   const recentActivities = [
     { action: 'Nouveau devis soumis', time: '10:45 AM', date: new Date() },
     { action: 'Facture #1234 payée', time: 'Hier', date: new Date(Date.now() - 86400000) },
@@ -169,37 +291,17 @@ const Dashboard = () => {
   return (
     <div className={`min-h-screen ${darkMode ? 'dark bg-gray-900' : 'bg-gray-100'}`}>
       <div className="flex">
-        {/* Sidebar */}
+        {/* Sidebar (unchanged) */}
         <aside className="w-64 bg-white dark:bg-gray-800 shadow-lg h-screen fixed transition-all duration-300">
           <div className="p-6">
             <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Devloppini</h2>
             <nav className="mt-6">
               <ul>
-                <li className="mb-2">
-                  <a href="/dashboard" className="flex items-center p-2 text-gray-700 dark:text-gray-200 hover:bg-indigo-100 dark:hover:bg-indigo-700 rounded">
-                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
-                    Tableau de bord
-                  </a>
-                </li>
-                <li className="mb-2">
-                  <a href="/clients" className="flex items-center p-2 text-gray-700 dark:text-gray-200 hover:bg-indigo-100 dark:hover:bg-indigo-700 rounded">
-                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
-                    Clients
-                  </a>
-                </li>
-                <li className="mb-2">
-                  <a href="/devis" className="flex items-center p-2 text-gray-700 dark:text-gray-200 hover:bg-indigo-100 dark:hover:bg-indigo-700 rounded">
-                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01m-.01 4h.01"></path></svg>
-                    Devis
-                  </a>
-                </li>
-                <li className="mb-2">
-                  <a href="/factures" className="flex items-center p-2 text-gray-700 dark:text-gray-200 hover:bg-indigo-100 dark:hover:bg-indigo-700 rounded">
-                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                    Factures
-                  </a>
-                </li>
-                
+                <li className="mb-2"><a href="/dashboard" className="flex items-center p-2 text-gray-700 dark:text-gray-200 hover:bg-indigo-100 dark:hover:bg-indigo-700 rounded"><svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>Tableau de bord</a></li>
+                <li className="mb-2"><a href="/clients" className="flex items-center p-2 text-gray-700 dark:text-gray-200 hover:bg-indigo-100 dark:hover:bg-indigo-700 rounded"><svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>Clients</a></li>
+                <li className="mb-2"><a href="/devis" className="flex items-center p-2 text-gray-700 dark:text-gray-200 hover:bg-indigo-100 dark:hover:bg-indigo-700 rounded"><svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01m-.01 4h.01"></path></svg>Devis</a></li>
+                <li className="mb-2"><a href="/factures" className="flex items-center p-2 text-gray-700 dark:text-gray-200 hover:bg-indigo-100 dark:hover:bg-indigo-700 rounded"><svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>Factures</a></li>
+                <li className="mb-2"><a href="/paid-clients" className="flex items-center p-2 text-gray-700 dark:text-gray-200 hover:bg-indigo-100 dark:hover:bg-indigo-700 rounded"><svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>clients paye</a></li>
               </ul>
             </nav>
             <button
@@ -217,7 +319,7 @@ const Dashboard = () => {
           <div className="max-w-7xl mx-auto">
             <div className="flex justify-between items-center mb-6">
               <h1 className="text-3xl font-bold text-gray-800 dark:text-white">Tableau de Bord</h1>
-              <span className="text-gray-500 dark:text-gray-300">Dernière mise à jour : {new Date().toLocaleString()}</span>
+              <span className="text-gray-500 dark:text-gray-300">Dernière mise à jour : {new Date().toLocaleString('fr-FR', { hour12: false })}</span>
             </div>
 
             {loading ? (
@@ -253,23 +355,27 @@ const Dashboard = () => {
                 {/* Charts */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                   <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
-                    <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Statut des Factures</h3>
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-xl font-semibold text-gray-800 dark:text-white">Statut des Factures</h3>
+                    </div>
                     <div className="h-64">
                       <Bar
-                        data={factureStatusData}
+                        data={factureStatusData()}
                         options={{
                           responsive: true,
                           maintainAspectRatio: false,
-                          plugins: { legend: { display: false } },
+                          plugins: { legend: { position: 'bottom' } },
                         }}
                       />
                     </div>
                   </div>
                   <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
-                    <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Statut des Devis</h3>
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-xl font-semibold text-gray-800 dark:text-white">Statut des Devis</h3>
+                    </div>
                     <div className="h-64">
                       <Pie
-                        data={devisStatusData}
+                        data={devisStatusData()}
                         options={{
                           responsive: true,
                           maintainAspectRatio: false,
@@ -280,10 +386,21 @@ const Dashboard = () => {
                   </div>
                 </div>
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 mb-6">
-                  <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Revenus Mensuels (2025)</h3>
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-xl font-semibold text-gray-800 dark:text-white">Revenus</h3>
+                    <select
+                      className="p-2 border rounded dark:bg-gray-700 dark:text-white"
+                      value={filter}
+                      onChange={(e) => setFilter(e.target.value)}
+                    >
+                      <option value="day">Jour</option>
+                      <option value="month">Mois</option>
+                      <option value="year">Année</option>
+                    </select>
+                  </div>
                   <div className="h-80">
                     <Line
-                      data={monthlyRevenueData()}
+                      data={revenueData()}
                       options={{
                         responsive: true,
                         maintainAspectRatio: false,
@@ -297,7 +414,7 @@ const Dashboard = () => {
                   </div>
                 </div>
 
-                {/* Testimonials Management */}
+                {/* Testimonials and Recent Activities (unchanged) */}
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 mb-6">
                   <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Gestion des Avis</h3>
                   <div className="overflow-x-auto">
@@ -339,7 +456,6 @@ const Dashboard = () => {
                   </div>
                 </div>
 
-                {/* Recent Activities */}
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
                   <div className="flex justify-between items-center mb-4">
                     <h3 className="text-xl font-semibold text-gray-800 dark:text-white">Activité Récente</h3>

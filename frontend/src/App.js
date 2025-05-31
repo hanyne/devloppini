@@ -16,6 +16,10 @@ import ClientDevisList from './components/ClientDevisList';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import 'react-toastify/dist/ReactToastify.css';
 import { ToastContainer } from 'react-toastify';
+import ForgotPassword from './components/ForgotPassword';
+import ResetPassword from './components/ResetPassword';
+import ChangePassword from './components/ChangePassword';
+import PaidClients from './components/PaidClients';
 
 const PaymentSuccess = () => {
     const { factureId } = useParams();
@@ -165,6 +169,9 @@ function App() {
                                             <Link to="/factures" className="text-white font-medium hover:text-yellow-300 transition-colors">
                                                 Factures
                                             </Link>
+                                            <Link to="/paid-clients" className="text-white font-medium hover:text-yellow-300 transition-colors">
+                                                Clients payee
+                                            </Link>
                                         </>
                                     )}
                                     {userRole === 'client' && (
@@ -181,6 +188,9 @@ function App() {
                                             <Link to="/payment-devis" className="text-white font-medium hover:text-yellow-300 transition-colors">
                                                 Mes Factures
                                             </Link>
+                                            <Link to="/change-password" className="text-white font-medium hover:text-yellow-300 transition-colors">
+                        Changer Mot de Passe
+                      </Link>
                                             <Link to="/contact" className="text-white font-medium hover:text-yellow-300 transition-colors">
                                                 Contact
                                             </Link>
@@ -221,6 +231,8 @@ function App() {
                                                 <Link to="/clients" className="text-white font-medium hover:text-yellow-300 transition-colors" onClick={toggleMenu}>Clients</Link>
                                                 <Link to="/devis" className="text-white font-medium hover:text-yellow-300 transition-colors" onClick={toggleMenu}>Devis</Link>
                                                 <Link to="/factures" className="text-white font-medium hover:text-yellow-300 transition-colors" onClick={toggleMenu}>Factures</Link>
+                                                <Link to="/paid-clients" className="text-white font-medium hover:text-yellow-300 transition-colors" onClick={toggleMenu}>Clients payee</Link>
+
                                             </>
                                         )}
                                         {userRole === 'client' && (
@@ -266,6 +278,10 @@ function App() {
                     <Route path="/payment/success/:factureId" element={<ProtectedRoute allowedRole="client"><PaymentSuccess /></ProtectedRoute>} />
                     <Route path="/api/payment/paypal/execute/" element={<PayPalExecuteHandler />} />
                     <Route path="/chat" element={<ProtectedRoute allowedRole="client"><Chat /></ProtectedRoute>} />
+                    <Route path="/paid-clients" element={<PaidClients />} /> {/* Add this route */}
+                    <Route path="/forgot-password" element={<ForgotPassword />} />
+                    <Route path="/reset-password/:uid/:token" element={<ResetPassword />} />
+                    <Route path="/change-password" element={<ProtectedRoute allowedRole="client"><ChangePassword /></ProtectedRoute>} /> {/* Add this route */}
                 </Routes>
             </div>
         </Router>

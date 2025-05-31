@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
+from django.core.files.storage import default_storage
 from decimal import Decimal
 from django.db.models import JSONField
 
@@ -32,12 +33,14 @@ class Service(models.Model):
     def __str__(self):
         return self.name
 
+# models.py
 class Client(models.Model):
     name = models.CharField(max_length=100)
     email = models.EmailField(unique=True)
     phone = models.CharField(max_length=15)
     country_code = models.CharField(max_length=5, default='+216')
     password = models.CharField(max_length=128)
+    is_active = models.BooleanField(default=True)  # Added for password reset
 
     def set_password(self, raw_password):
         from django.contrib.auth.hashers import make_password
@@ -87,16 +90,23 @@ class Devis(models.Model):
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     created_at = models.DateTimeField(auto_now_add=True)
-    counter_offer = models.TextField(blank=True, null=True)  # Contre-proposition
+    counter_offer = models.TextField(blank=True, null=True)
     counter_offer_status = models.CharField(
         max_length=20,
         choices=(('pending', 'Pending'), ('accepted', 'Accepted'), ('rejected', 'Rejected')),
         blank=True,
         null=True
-    )  # Statut de la contre-proposition
+    )
+    specification_pdf = models.FileField(upload_to='specifications/', null=True, blank=True)
 
     def __str__(self):
         return f"Devis #{self.id} pour {self.client.name}"
+    def has_pdf(self):
+        """Check if the PDF file exists in storage."""
+        if self.specification_pdf and default_storage.exists(self.specification_pdf.name):
+            return True
+        return False
+
 class Facture(models.Model):
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='factures')
     devis = models.ForeignKey(Devis, on_delete=models.SET_NULL, null=True, blank=True, related_name='factures')
@@ -135,6 +145,7 @@ class Payment(models.Model):
 
     def __str__(self):
         return f"Payment {self.paypal_order_id} for Facture {self.facture.invoice_number}"
+
 class Testimonial(models.Model):
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='testimonials')
     content = models.TextField()
