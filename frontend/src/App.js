@@ -147,7 +147,7 @@ function App() {
                 <nav className="bg-gradient-to-r from-gray-800 to-blue-900 text-white shadow-lg sticky top-0 z-50">
                     <div className="container mx-auto px-4 py-4 flex justify-between items-center">
                         <Link to="/" className="flex items-center space-x-2">
-                            <img src={'/logo.png'} alt="Logo" className="h-8 w-8" />
+                            <img src={'/logo.jpg'} alt="Logo" className="h-8 w-8" />
                             <span className="text-2xl font-bold tracking-tight text-white hover:text-yellow-300 transition-colors">
                                 SMARTBILL
                             </span>

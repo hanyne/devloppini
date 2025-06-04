@@ -1,3 +1,4 @@
+// src/components/PaidClients.jsx
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
@@ -16,8 +17,8 @@ const SkeletonRow = () => (
 
 const PaidClients = () => {
   const [factures, setFactures] = useState([]);
-  const [filteredFactures, setFilteredFactures] = useState([]); // State for filtered factures
-  const [searchQuery, setSearchQuery] = useState(''); // State for search query
+  const [filteredFactures, setFilteredFactures] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
@@ -36,8 +37,9 @@ const PaidClients = () => {
         const response = await axios.get('http://localhost:8000/api/factures/?status=paid', {
           headers: { Authorization: `Bearer ${token}` },
         });
+        console.log('API Response:', response.data); // Debug: Log the API response
         setFactures(response.data);
-        setFilteredFactures(response.data); // Initialize filtered factures
+        setFilteredFactures(response.data);
       } catch (err) {
         setError('Erreur lors du chargement des factures payées.');
         console.error(err);
@@ -52,12 +54,13 @@ const PaidClients = () => {
   }, [navigate]);
 
   useEffect(() => {
-    // Filter factures based on search query
-    const filtered = factures.filter(facture =>
-      (facture.client?.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      facture.invoice_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      facture.amount.toString().includes(searchQuery)
-    );
+    const filtered = factures
+      .filter(facture => facture.status === 'paid') // Ensure only paid invoices
+      .filter(facture =>
+        (facture.client?.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        facture.invoice_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        facture.amount.toString().includes(searchQuery)
+      );
     setFilteredFactures(filtered);
   }, [searchQuery, factures]);
 
@@ -209,7 +212,14 @@ const PaidClients = () => {
                     <td className="p-4">{f.invoice_number}</td>
                     <td className="p-4">{f.amount} TND</td>
                     <td className="p-4">
-                      <span className="px-2 py-1 rounded bg-green-200 text-green-800">Payée</span>
+                      <span
+                        className={`px-2 py-1 rounded ${
+                          f.status === 'paid' ? 'bg-green-200 text-green-800' :
+                          f.status === 'overdue' ? 'bg-red-200 text-red-800' : 'bg-yellow-200 text-yellow-800'
+                        }`}
+                      >
+                        {f.status === 'unpaid' ? 'Impayée' : f.status === 'paid' ? 'Payée' : 'En retard'}
+                      </span>
                     </td>
                     <td className="p-4">
                       <motion.button
@@ -225,6 +235,7 @@ const PaidClients = () => {
                         whileHover={{ scale: 1.1 }}
                         onClick={() => handleSendEmail(f)}
                         className="text-green-500 hover:text-green-700"
+                        disabled={f.status !== 'paid'} // Disable if not paid
                       >
                         <FaPaperPlane />
                       </motion.button>

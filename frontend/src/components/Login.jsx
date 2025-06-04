@@ -64,12 +64,17 @@ const Login = ({ setIsAuthenticated, setUserRole }) => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-300 dark:from-gray-800 dark:to-gray-900">
+    <div
+      className="min-h-screen flex items-center justify-center bg-cover bg-center bg-no-repeat"
+      style={{
+        backgroundImage: `url('https://www.wgcfrance.com/images/cours_informatique.png')`, // Replace with your image URL
+      }}
+    >
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-md"
+        className="bg-white dark:bg-gray-800 bg-opacity-90 dark:bg-opacity-90 rounded-2xl shadow-2xl p-8 w-full max-w-md"
       >
         <h2 className="text-3xl font-bold text-center text-gray-800 dark:text-gray-100 mb-6">Connexion</h2>
 
